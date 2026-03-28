@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
+import { ChevronRight } from 'lucide-react'
 
 export function Players() {
   const [search, setSearch] = useState('')
@@ -26,7 +27,7 @@ export function Players() {
       <div className="mb-8">
         <h1 className="font-display text-4xl" style={{ color: 'var(--color-text-primary)' }}>PLAYER POOL</h1>
         <p className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>
-          {golfers.length} golfers available · Ranked by world ranking
+          {golfers.length} golfers available · Ranked by world ranking · Tap for stats
         </p>
       </div>
 
@@ -63,13 +64,16 @@ export function Players() {
                 {golfer.country || 'Unknown'}{golfer.worldRanking ? ` · #${golfer.worldRanking} World Ranking` : ''}
               </div>
             </div>
-            {golfer.worldRanking && (
-              <div className="text-right flex-shrink-0">
-                <div className="font-mono font-bold text-lg" style={{ color: 'var(--color-green-primary)' }}>
-                  #{golfer.worldRanking}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {golfer.worldRanking && (
+                <div className="text-right">
+                  <div className="font-mono font-bold text-lg" style={{ color: 'var(--color-green-primary)' }}>
+                    #{golfer.worldRanking}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+              <ChevronRight size={14} style={{ color: 'var(--color-text-muted)' }} />
+            </div>
           </Link>
         ))}
       </div>

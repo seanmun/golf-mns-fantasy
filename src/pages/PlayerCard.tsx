@@ -3,6 +3,19 @@ import { useQuery } from '@tanstack/react-query'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ArrowLeft } from 'lucide-react'
 
+const DEFAULT_SCORING = {
+  hole_in_one: 15,
+  albatross: 12,
+  eagle: 8,
+  birdie: 3,
+  par: 0,
+  bogey: -1,
+  double_bogey: -3,
+  worse_than_double: -5,
+  made_cut_bonus: 2,
+  position_bonuses: { '1': 20, '2': 12, '3': 8, '4': 5, '5': 3 } as Record<string, number>,
+}
+
 interface TournamentResult {
   tournamentName: string
   tournamentDate: string
@@ -17,6 +30,22 @@ interface TournamentResult {
   holeInOnes: number
   madeCut: boolean
   rounds: number
+}
+
+function calcFantasyPts(r: TournamentResult): number {
+  let pts = 0
+  pts += r.holeInOnes * DEFAULT_SCORING.hole_in_one
+  pts += r.eagles * DEFAULT_SCORING.eagle
+  pts += r.birdies * DEFAULT_SCORING.birdie
+  pts += r.pars * DEFAULT_SCORING.par
+  pts += r.bogeys * DEFAULT_SCORING.bogey
+  pts += r.doubleBogeys * DEFAULT_SCORING.double_bogey
+  if (r.madeCut) pts += DEFAULT_SCORING.made_cut_bonus
+  if (r.rank) {
+    const posBonus = DEFAULT_SCORING.position_bonuses[String(r.rank)]
+    if (posBonus) pts += posBonus
+  }
+  return pts
 }
 
 export function PlayerCard() {
@@ -43,22 +72,25 @@ export function PlayerCard() {
 
   const { golfer, results } = data as { golfer: any; results: TournamentResult[] }
 
-  // Aggregate stats across all results
+  // Calculate fantasy points per tournament
+  const resultsWithPts = results.map((r: TournamentResult) => ({
+    ...r,
+    fantasyPts: calcFantasyPts(r),
+  }))
+
+  // Aggregate stats
   const totalBirdies = results.reduce((s: number, r: TournamentResult) => s + r.birdies, 0)
   const totalEagles = results.reduce((s: number, r: TournamentResult) => s + r.eagles, 0)
   const totalEarnings = results.reduce((s: number, r: TournamentResult) => s + (r.earnings || 0), 0)
+  const totalFantasyPts = resultsWithPts.reduce((s, r) => s + r.fantasyPts, 0)
   const cutsMade = results.filter((r: TournamentResult) => r.madeCut).length
   const topTens = results.filter((r: TournamentResult) => r.rank && r.rank <= 10).length
   const wins = results.filter((r: TournamentResult) => r.rank === 1).length
+  const avgFantasyPts = results.length > 0 ? Math.round(totalFantasyPts / results.length) : 0
 
-  // Score trend for chart
-  const scores = results
-    .filter((r: TournamentResult) => r.totalScore != null)
-    .map((r: TournamentResult) => r.totalScore as number)
-
-  const minScore = scores.length > 0 ? Math.min(...scores) : -20
-  const maxScore = scores.length > 0 ? Math.max(...scores) : 20
-  const range = Math.max(Math.abs(maxScore - minScore), 1)
+  // Fantasy points for chart
+  const fantasyScores = resultsWithPts.map((r) => r.fantasyPts)
+  const absMax = fantasyScores.length > 0 ? Math.max(...fantasyScores.map(Math.abs), 1) : 20
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-12">
@@ -93,17 +125,19 @@ export function PlayerCard() {
 
       {/* Season stats */}
       {results.length > 0 && (
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-8">
+        <div className="grid grid-cols-4 sm:grid-cols-8 gap-3 mb-8">
           {[
             { label: 'Events', value: results.length, color: 'var(--color-text-primary)' },
             { label: 'Wins', value: wins, color: 'var(--color-gold)' },
             { label: 'Top 10s', value: topTens, color: 'var(--color-green-primary)' },
-            { label: 'Cuts Made', value: `${cutsMade}/${results.length}`, color: 'var(--color-text-primary)' },
+            { label: 'Cuts', value: `${cutsMade}/${results.length}`, color: 'var(--color-text-primary)' },
             { label: 'Birdies', value: totalBirdies, color: 'var(--color-score-birdie)' },
             { label: 'Eagles', value: totalEagles, color: 'var(--color-score-eagle)' },
+            { label: 'FPts', value: totalFantasyPts, color: 'var(--color-green-primary)' },
+            { label: 'Avg FPts', value: avgFantasyPts, color: 'var(--color-green-primary)' },
           ].map(({ label, value, color }) => (
             <div key={label} className="rounded-xl border p-3 text-center" style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
-              <p className="font-mono font-bold text-2xl" style={{ color }}>{value}</p>
+              <p className="font-mono font-bold text-xl" style={{ color }}>{value}</p>
               <p className="text-[10px] mt-1" style={{ color: 'var(--color-text-muted)' }}>{label}</p>
             </div>
           ))}
@@ -120,36 +154,31 @@ export function PlayerCard() {
         </div>
       )}
 
-      {/* Score trend chart */}
-      {scores.length > 1 && (
+      {/* Fantasy points trend chart */}
+      {fantasyScores.length > 1 && (
         <div className="rounded-xl border p-5 mb-8" style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
-          <h2 className="font-display text-lg mb-4" style={{ color: 'var(--color-text-primary)' }}>SCORE TREND</h2>
-          <div className="flex items-end gap-1 h-32">
-            {results.filter((r: TournamentResult) => r.totalScore != null).map((r: TournamentResult, i: number) => {
-              const score = r.totalScore as number
-              // Invert: lower score = taller bar (better)
-              const normalized = 1 - (score - minScore) / range
-              const height = Math.max(normalized * 100, 8)
-              const isNegative = score < 0
+          <h2 className="font-display text-lg mb-1" style={{ color: 'var(--color-text-primary)' }}>FANTASY POINTS TREND</h2>
+          <p className="text-xs mb-4" style={{ color: 'var(--color-text-muted)' }}>Points per tournament using default scoring</p>
+          <div className="flex items-end gap-2 h-40">
+            {resultsWithPts.map((r, i) => {
+              const pts = r.fantasyPts
+              const height = Math.max((Math.abs(pts) / absMax) * 100, 12)
+              const isPositive = pts >= 0
               return (
                 <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                  <span className="text-[9px] font-mono" style={{ color: isNegative ? 'var(--color-green-primary)' : score > 0 ? 'var(--color-score-bogey)' : 'var(--color-text-muted)' }}>
-                    {score > 0 ? `+${score}` : score}
+                  <span className="text-[10px] font-mono font-bold" style={{ color: isPositive ? 'var(--color-green-primary)' : 'var(--color-score-bogey)' }}>
+                    {pts > 0 ? `+${pts}` : pts}
                   </span>
                   <div
-                    className="w-full rounded-t"
+                    className="w-full rounded-t min-h-[8px]"
                     style={{
                       height: `${height}%`,
-                      background: isNegative
-                        ? 'var(--color-green-primary)'
-                        : score > 0
-                        ? 'var(--color-score-bogey)'
-                        : 'var(--color-border)',
-                      opacity: 0.7,
+                      background: isPositive ? 'var(--color-green-primary)' : 'var(--color-score-bogey)',
+                      opacity: 0.8,
                     }}
                   />
-                  <span className="text-[8px] truncate w-full text-center" style={{ color: 'var(--color-text-muted)' }}>
-                    {r.tournamentName.length > 12 ? r.tournamentName.slice(0, 12) + '...' : r.tournamentName}
+                  <span className="text-[8px] truncate w-full text-center leading-tight" style={{ color: 'var(--color-text-muted)' }}>
+                    {r.tournamentName.length > 14 ? r.tournamentName.slice(0, 14) + '…' : r.tournamentName}
                   </span>
                 </div>
               )
@@ -169,20 +198,15 @@ export function PlayerCard() {
                   <th className="text-left px-5 py-2 text-xs font-normal" style={{ color: 'var(--color-text-muted)' }}>Tournament</th>
                   <th className="text-center px-2 py-2 text-xs font-normal" style={{ color: 'var(--color-text-muted)' }}>Pos</th>
                   <th className="text-center px-2 py-2 text-xs font-normal" style={{ color: 'var(--color-text-muted)' }}>Score</th>
-                  <th className="text-center px-2 py-2 text-xs font-normal hidden sm:table-cell" style={{ color: 'var(--color-text-muted)' }}>
-                    <span title="Birdies">BIR</span>
-                  </th>
-                  <th className="text-center px-2 py-2 text-xs font-normal hidden sm:table-cell" style={{ color: 'var(--color-text-muted)' }}>
-                    <span title="Eagles">EAG</span>
-                  </th>
-                  <th className="text-center px-2 py-2 text-xs font-normal hidden sm:table-cell" style={{ color: 'var(--color-text-muted)' }}>
-                    <span title="Bogeys">BOG</span>
-                  </th>
+                  <th className="text-center px-2 py-2 text-xs font-normal" style={{ color: 'var(--color-text-muted)' }}>FPts</th>
+                  <th className="text-center px-2 py-2 text-xs font-normal hidden sm:table-cell" style={{ color: 'var(--color-text-muted)' }}>BIR</th>
+                  <th className="text-center px-2 py-2 text-xs font-normal hidden sm:table-cell" style={{ color: 'var(--color-text-muted)' }}>EAG</th>
+                  <th className="text-center px-2 py-2 text-xs font-normal hidden sm:table-cell" style={{ color: 'var(--color-text-muted)' }}>BOG</th>
                   <th className="text-right px-5 py-2 text-xs font-normal hidden sm:table-cell" style={{ color: 'var(--color-text-muted)' }}>Earnings</th>
                 </tr>
               </thead>
               <tbody>
-                {[...results].reverse().map((r: TournamentResult, i: number) => {
+                {[...resultsWithPts].reverse().map((r, i) => {
                   const scoreColor = r.totalScore != null && r.totalScore < 0
                     ? 'var(--color-green-primary)'
                     : r.totalScore != null && r.totalScore > 0
@@ -202,7 +226,10 @@ export function PlayerCard() {
                         {r.rank ? `T${r.rank}` : '-'}
                       </td>
                       <td className="text-center px-2 py-3 font-mono font-bold" style={{ color: scoreColor }}>
-                        {r.totalScore != null ? (r.totalScore > 0 ? `+${r.totalScore}` : r.totalScore) : '-'}
+                        {r.totalScore != null ? (r.totalScore > 0 ? `+${r.totalScore}` : r.totalScore === 0 ? 'E' : r.totalScore) : '-'}
+                      </td>
+                      <td className="text-center px-2 py-3 font-mono font-bold" style={{ color: r.fantasyPts >= 0 ? 'var(--color-green-primary)' : 'var(--color-score-bogey)' }}>
+                        {r.fantasyPts > 0 ? `+${r.fantasyPts}` : r.fantasyPts}
                       </td>
                       <td className="text-center px-2 py-3 font-mono hidden sm:table-cell" style={{ color: 'var(--color-score-birdie)' }}>{r.birdies}</td>
                       <td className="text-center px-2 py-3 font-mono hidden sm:table-cell" style={{ color: 'var(--color-score-eagle)' }}>{r.eagles}</td>

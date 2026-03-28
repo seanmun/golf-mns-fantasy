@@ -53,50 +53,51 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const tournaments: any[] = await tournamentsRes.json()
 
-    // Get the last 8 completed tournaments
+    // Get the last 5 completed tournaments
     const completed = tournaments
       .filter((t: any) => t.IsOver === true)
       .sort((a: any, b: any) => new Date(b.StartDate).getTime() - new Date(a.StartDate).getTime())
-      .slice(0, 8)
+      .slice(0, 5)
 
-    // Fetch leaderboards in parallel
-    const leaderboardPromises = completed.map(async (t: any) => {
-      try {
-        const res = await fetch(`${baseUrl}/Leaderboard/${t.TournamentID}?key=${apiKey}`)
-        if (!res.ok) return null
-        const data = await res.json()
-        return { tournament: t, leaderboard: data }
-      } catch {
-        return null
-      }
-    })
+    console.log(`Fetching leaderboards for ${completed.length} tournaments, golfer externalId: ${golfer.externalId}`)
 
-    const leaderboards = await Promise.all(leaderboardPromises)
-
-    // Find this golfer in each leaderboard
+    // Fetch leaderboards sequentially to avoid rate limits
     const results: TournamentResult[] = []
-    for (const lb of leaderboards) {
-      if (!lb) continue
-      const player = lb.leaderboard.Players?.find(
-        (p: any) => String(p.PlayerID) === golfer.externalId
-      )
-      if (!player) continue
+    for (const t of completed) {
+      try {
+        const lbRes = await fetch(`${baseUrl}/Leaderboard/${t.TournamentID}?key=${apiKey}`)
+        if (!lbRes.ok) {
+          console.log(`Leaderboard ${t.TournamentID} (${t.Name}) returned ${lbRes.status}`)
+          continue
+        }
+        const lbData = await lbRes.json()
+        const player = lbData.Players?.find(
+          (p: any) => String(p.PlayerID) === golfer.externalId
+        )
+        if (!player) {
+          console.log(`Golfer ${golfer.externalId} not found in ${t.Name} (${lbData.Players?.length || 0} players)`)
+          continue
+        }
 
-      results.push({
-        tournamentName: lb.tournament.Name,
-        tournamentDate: lb.tournament.StartDate,
-        rank: player.Rank != null ? Math.round(player.Rank) : null,
-        totalScore: player.TotalScore != null ? Math.round(player.TotalScore) : null,
-        earnings: player.Earnings != null ? Math.round(player.Earnings) : null,
-        birdies: Math.round(player.Birdies || 0),
-        eagles: Math.round(player.Eagles || 0),
-        pars: Math.round(player.Pars || 0),
-        bogeys: Math.round(player.Bogeys || 0),
-        doubleBogeys: Math.round(player.DoubleBogeys || 0),
-        holeInOnes: Math.round(player.HoleInOnes || 0),
-        madeCut: player.MadeCut > 0,
-        rounds: player.Rounds?.length || 0,
-      })
+        results.push({
+          tournamentName: t.Name,
+          tournamentDate: t.StartDate,
+          rank: player.Rank != null ? Math.round(player.Rank) : null,
+          totalScore: player.TotalScore != null ? Math.round(player.TotalScore) : null,
+          earnings: player.Earnings != null ? Math.round(player.Earnings) : null,
+          birdies: Math.round(player.Birdies || 0),
+          eagles: Math.round(player.Eagles || 0),
+          pars: Math.round(player.Pars || 0),
+          bogeys: Math.round(player.Bogeys || 0),
+          doubleBogeys: Math.round(player.DoubleBogeys || 0),
+          holeInOnes: Math.round(player.HoleInOnes || 0),
+          madeCut: player.MadeCut > 0,
+          rounds: player.Rounds?.length || 0,
+        })
+      } catch (err) {
+        console.log(`Error fetching leaderboard ${t.TournamentID}:`, err)
+        continue
+      }
     }
 
     // Sort oldest to newest for chart display
