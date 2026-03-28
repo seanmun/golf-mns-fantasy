@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #0a0a0f;
+  --color-foreground: #f5f5f7;
+  --color-card: #141419;
+  --color-card-foreground: #f5f5f7;
+  --color-border: #2a2a35;
+  --color-muted: #1c1c24;
+  --color-muted-foreground: #8e8e9a;
+  --color-accent: #00ff87;
+  --color-accent-foreground: #0a0a0f;
+
+  --color-neon-green: #00ff87;
+  --color-neon-purple: #bf5af2;
+  --color-neon-cyan: #00e5ff;
+  --color-neon-pink: #ff2d55;
+
+  --font-display: 'Bebas Neue', sans-serif;
+  --font-sans: 'DM Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+/* Aliases so existing components don't need rewriting */
+:root {
+  --color-bg: var(--color-background);
+  --color-surface: var(--color-card);
+  --color-surface-2: var(--color-muted);
+  --color-text-primary: var(--color-foreground);
+  --color-text-secondary: var(--color-muted-foreground);
+  --color-text-muted: var(--color-muted-foreground);
+  --color-green-primary: var(--color-neon-green);
+  --color-green-muted: #2d5a3d;
+  --color-green-dim: #0d2a1a;
+}
+
+/* Golf-specific score colors */
+:root {
+  --color-score-eagle: #00ff87;
+  --color-score-birdie: #00e5ff;
+  --color-score-par: #8e8e9a;
+  --color-score-bogey: #ff9f0a;
+  --color-score-double: #ff453a;
+  --color-gold: #c9a84c;
+  --color-gold-light: #e8c96a;
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  border-color: var(--color-border);
+}
