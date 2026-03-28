@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { db } from '../_db'
+import { db } from '../_db.js'
 import { golfTournaments } from '../../src/lib/db/schema'
 import { eq } from 'drizzle-orm'
 

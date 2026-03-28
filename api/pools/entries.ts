@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { db } from '../_db'
-import { verifyAuth } from '../_middleware'
+import { db } from '../_db.js'
+import { verifyAuth } from '../_middleware.js'
 import { golfPools, golfPoolEntries, golfTournaments } from '../../src/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 

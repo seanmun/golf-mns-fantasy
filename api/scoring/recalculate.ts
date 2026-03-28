@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { db } from '../_db'
-import { verifyAuth, isAdmin } from '../_middleware'
+import { db } from '../_db.js'
+import { verifyAuth, isAdmin } from '../_middleware.js'
 import { golfPools, golfPoolEntries, golfGolferResults } from '../../src/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { calculateGolferPoints, type ScoringConfig, type GolferStats } from '../../src/lib/scoring/engine'

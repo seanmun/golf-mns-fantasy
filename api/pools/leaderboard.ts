@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { db } from '../_db'
+import { db } from '../_db.js'
 import { golfPools, golfPoolEntries, golfGolfers, golfGolferResults, golfUsers } from '../../src/lib/db/schema'
 import { eq, inArray } from 'drizzle-orm'
 
