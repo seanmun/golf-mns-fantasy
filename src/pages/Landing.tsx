@@ -126,6 +126,13 @@ export function Landing() {
             >
               Browse Pools
             </Link>
+            <Link
+              to="/players"
+              className="inline-flex items-center justify-center gap-2 rounded-xl border px-6 py-3 font-semibold transition-colors hover:bg-[var(--color-muted)]"
+              style={{ borderColor: 'var(--color-border)', color: 'var(--color-foreground)' }}
+            >
+              View Player Pool
+            </Link>
           </motion.div>
         </div>
       </section>

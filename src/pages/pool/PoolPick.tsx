@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useApi } from '@/lib/api/client'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
-import { Check } from 'lucide-react'
+import { Check, Flag } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
@@ -28,12 +28,23 @@ export function PoolPick() {
     },
   })
 
+  // Fetch all active golfers
   const { data: golfersData, isLoading: golfersLoading } = useQuery({
-    queryKey: ['golfers', poolData?.pool?.tournamentId],
+    queryKey: ['all-golfers'],
+    queryFn: async () => {
+      const res = await fetch('/api/golfers')
+      if (!res.ok) throw new Error('Failed to load golfers')
+      return res.json()
+    },
+  })
+
+  // Fetch tournament field to flag registered golfers
+  const { data: fieldData } = useQuery({
+    queryKey: ['field', poolData?.pool?.tournamentId],
     enabled: !!poolData?.pool?.tournamentId,
     queryFn: async () => {
       const res = await fetch(`/api/golfers?tournamentId=${poolData!.pool.tournamentId}`)
-      if (!res.ok) throw new Error('Failed to load golfers')
+      if (!res.ok) return { golfers: [] }
       return res.json()
     },
   })
@@ -41,6 +52,7 @@ export function PoolPick() {
   if (poolLoading || golfersLoading) return <LoadingSpinner />
 
   const pool = poolData?.pool
+  const fieldIds = new Set((fieldData?.golfers || []).map((g: any) => g.id))
   const golfers = (golfersData?.golfers || []).filter((g: any) =>
     !search || g.name.toLowerCase().includes(search.toLowerCase())
   )
@@ -142,8 +154,11 @@ export function PoolPick() {
                 {isSelected && <Check size={11} color="#000" strokeWidth={3} />}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="font-medium text-sm truncate" style={{ color: 'var(--color-text-primary)' }}>
+                <div className="font-medium text-sm truncate flex items-center gap-1.5" style={{ color: 'var(--color-text-primary)' }}>
                   {golfer.name}
+                  {fieldIds.has(golfer.id) && (
+                    <Flag size={11} className="text-neon-green flex-shrink-0" />
+                  )}
                 </div>
                 <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
                   {golfer.country || 'Unknown'}{golfer.worldRanking ? ` · #${golfer.worldRanking} WR` : ''}

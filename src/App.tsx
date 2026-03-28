@@ -10,6 +10,7 @@ import { PoolDetail } from '@/pages/pool/PoolDetail'
 import { PoolPick } from '@/pages/pool/PoolPick'
 import { PoolLeaderboard } from '@/pages/pool/PoolLeaderboard'
 import { AdminPanel } from '@/pages/admin/AdminPanel'
+import { Players } from '@/pages/Players'
 import { NotFound } from '@/pages/NotFound'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -37,6 +38,7 @@ export default function App() {
         <Route path="/sign-in/*" element={<AuthPage><SignIn routing="path" path="/sign-in" signUpUrl="/sign-up" fallbackRedirectUrl="/dashboard" /></AuthPage>} />
         <Route path="/sign-up/*" element={<AuthPage><SignUp routing="path" path="/sign-up" signInUrl="/sign-in" fallbackRedirectUrl="/dashboard" /></AuthPage>} />
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        <Route path="/players" element={<Players />} />
         <Route path="/pools" element={<PoolBrowse />} />
         <Route path="/pools/create" element={<ProtectedRoute><PoolCreate /></ProtectedRoute>} />
         <Route path="/pools/join/:joinCode" element={<ProtectedRoute><PoolJoin /></ProtectedRoute>} />
