@@ -1,5 +1,5 @@
 import { Routes, Route } from 'react-router-dom'
-import { SignedIn, SignedOut, RedirectToSignIn } from '@clerk/clerk-react'
+import { SignedIn, SignedOut, RedirectToSignIn, SignIn, SignUp } from '@clerk/clerk-react'
 import { AppShell } from '@/components/layout/AppShell'
 import { Landing } from '@/pages/Landing'
 import { Dashboard } from '@/pages/Dashboard'
@@ -21,11 +21,21 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   )
 }
 
+function AuthPage({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '80vh' }}>
+      {children}
+    </div>
+  )
+}
+
 export default function App() {
   return (
     <Routes>
       <Route element={<AppShell />}>
         <Route path="/" element={<Landing />} />
+        <Route path="/sign-in/*" element={<AuthPage><SignIn routing="path" path="/sign-in" signUpUrl="/sign-up" fallbackRedirectUrl="/dashboard" /></AuthPage>} />
+        <Route path="/sign-up/*" element={<AuthPage><SignUp routing="path" path="/sign-up" signInUrl="/sign-in" fallbackRedirectUrl="/dashboard" /></AuthPage>} />
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/pools" element={<PoolBrowse />} />
         <Route path="/pools/create" element={<ProtectedRoute><PoolCreate /></ProtectedRoute>} />

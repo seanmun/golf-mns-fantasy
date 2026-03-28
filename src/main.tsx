@@ -10,8 +10,6 @@ import './index.css'
 const publishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 if (!publishableKey) throw new Error('Missing VITE_CLERK_PUBLISHABLE_KEY')
 
-const platformUrl = import.meta.env.VITE_PLATFORM_URL || 'https://mnsfantasy.com'
-
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -25,13 +23,11 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ClerkProvider
       publishableKey={publishableKey}
-      isSatellite
-      domain="mnsfantasy.com"
-      signInUrl={`${platformUrl}/sign-in`}
-      signUpUrl={`${platformUrl}/sign-up`}
+      signInUrl="/sign-in"
+      signUpUrl="/sign-up"
       signInFallbackRedirectUrl="/dashboard"
       signUpFallbackRedirectUrl="/dashboard"
-      afterSignOutUrl={platformUrl}
+      afterSignOutUrl="/"
     >
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>

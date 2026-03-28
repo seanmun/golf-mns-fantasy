@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { db } from '../_db.js'
 import { verifyAuth, isAdmin } from '../_middleware.js'
-import { golfGolferResults, golfTournamentField } from '../../src/lib/db/schema'
+import { golfGolferResults, golfTournamentField } from '../../src/lib/db/schema.js'
 import { eq, and } from 'drizzle-orm'
 
 // POST /api/admin/scores

@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { db } from '../_db.js'
-import { golfTournaments } from '../../src/lib/db/schema'
+import { golfTournaments } from '../../src/lib/db/schema.js'
 import { eq } from 'drizzle-orm'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
