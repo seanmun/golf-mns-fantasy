@@ -1,10 +1,14 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Users, Globe } from 'lucide-react'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { EmptyState } from '@/components/shared/EmptyState'
 
 export function PoolBrowse() {
+  const [joinCode, setJoinCode] = useState('')
+  const navigate = useNavigate()
+
   const { data, isLoading } = useQuery({
     queryKey: ['pools'],
     queryFn: async () => {
@@ -34,6 +38,27 @@ export function PoolBrowse() {
         >
           Create Pool
         </Link>
+      </div>
+
+      {/* Join by code */}
+      <div className="flex gap-2 mb-8">
+        <input
+          type="text"
+          placeholder="Enter join code..."
+          value={joinCode}
+          onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+          onKeyDown={(e) => { if (e.key === 'Enter' && joinCode.trim()) navigate(`/pools/join/${joinCode.trim()}`) }}
+          className="flex-1 px-3 py-2.5 rounded-lg border text-sm outline-none"
+          style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
+        />
+        <button
+          onClick={() => { if (joinCode.trim()) navigate(`/pools/join/${joinCode.trim()}`) }}
+          disabled={!joinCode.trim()}
+          className="px-4 py-2.5 rounded-lg text-sm font-medium disabled:opacity-40"
+          style={{ background: 'var(--color-surface)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border)' }}
+        >
+          Join
+        </button>
       </div>
 
       {pools.length === 0 ? (

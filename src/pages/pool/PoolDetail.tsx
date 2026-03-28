@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useUser } from '@clerk/clerk-react'
-import { Copy, Users, ChevronRight, Pencil, Trash2 } from 'lucide-react'
+import { Copy, Users, ChevronRight, Pencil, Trash2, Share2 } from 'lucide-react'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { useApi } from '@/lib/api/client'
 import { toast } from 'sonner'
@@ -82,14 +82,27 @@ export function PoolDetail() {
           )}
         </div>
 
-        {/* Join code */}
-        {isOwner && pool.joinCode && (
-          <div className="mt-4 inline-flex items-center gap-2 px-3 py-2 rounded-lg border"
-            style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
-            <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Join code:</span>
-            <span className="font-mono font-bold text-sm" style={{ color: 'var(--color-text-primary)' }}>{pool.joinCode}</span>
-            <button onClick={copyJoinCode} className="ml-1 hover:opacity-70 transition-opacity">
-              <Copy size={13} style={{ color: 'var(--color-text-muted)' }} />
+        {/* Join code + share link */}
+        {pool.joinCode && (
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border"
+              style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
+              <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Join code:</span>
+              <span className="font-mono font-bold text-sm" style={{ color: 'var(--color-text-primary)' }}>{pool.joinCode}</span>
+              <button onClick={copyJoinCode} className="ml-1 hover:opacity-70 transition-opacity">
+                <Copy size={13} style={{ color: 'var(--color-text-muted)' }} />
+              </button>
+            </div>
+            <button
+              onClick={() => {
+                const url = `${window.location.origin}/pools/join/${pool.joinCode}`
+                navigator.clipboard.writeText(url)
+                toast.success('Share link copied!')
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm hover:opacity-80 transition-opacity"
+              style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}
+            >
+              <Share2 size={13} /> Share Link
             </button>
           </div>
         )}
