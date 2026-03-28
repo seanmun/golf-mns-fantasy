@@ -3,7 +3,7 @@ import { db } from '../_db.js'
 import { verifyAuth, isAdmin } from '../_middleware.js'
 import { golfPools, golfPoolEntries, golfGolferResults } from '../../src/lib/db/schema.js'
 import { eq } from 'drizzle-orm'
-import { calculateGolferPoints, type ScoringConfig, type GolferStats } from '../../src/lib/scoring/engine'
+import { calculateGolferPoints, type ScoringConfig, type GolferStats } from '../../src/lib/scoring/engine.js'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })

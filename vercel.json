@@ -1,7 +1,7 @@
 {
   "functions": {
     "api/**/*.ts": {
-      "includeFiles": "api/_*.ts,src/lib/db/schema.ts",
+      "includeFiles": "api/_*.ts,src/lib/db/schema.ts,src/lib/scoring/engine.ts",
       "maxDuration": 30
     }
   },
