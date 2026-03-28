@@ -25,17 +25,17 @@ export function Header() {
         <div className="flex items-center gap-3">
           <SignedIn>
             <UserButton
-              afterSignOutUrl={platformUrl}
+              afterSignOutUrl="/"
               appearance={{ elements: { avatarBox: 'w-8 h-8' } }}
             />
           </SignedIn>
           <SignedOut>
-            <a href={`${platformUrl}/sign-in?redirect_url=${encodeURIComponent(window.location.href)}`}>
+            <Link to="/sign-in">
               <Button variant="ghost" size="sm">Sign In</Button>
-            </a>
-            <a href={`${platformUrl}/sign-up?redirect_url=${encodeURIComponent(window.location.href)}`}>
+            </Link>
+            <Link to="/sign-up">
               <Button size="sm">Sign Up</Button>
-            </a>
+            </Link>
           </SignedOut>
         </div>
       </div>
