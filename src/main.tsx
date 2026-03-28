@@ -26,7 +26,7 @@ createRoot(document.getElementById('root')!).render(
     <ClerkProvider
       publishableKey={publishableKey}
       isSatellite
-      domain={window.location.hostname === 'localhost' ? 'mnsfantasy.com' : window.location.hostname}
+      domain="mnsfantasy.com"
       signInUrl={`${platformUrl}/sign-in`}
       signUpUrl={`${platformUrl}/sign-up`}
       signInFallbackRedirectUrl="/dashboard"

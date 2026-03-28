@@ -33,7 +33,7 @@ export function Header() {
             <a href={`${platformUrl}/sign-in?redirect_url=${encodeURIComponent(window.location.href)}`}>
               <Button variant="ghost" size="sm">Sign In</Button>
             </a>
-            <a href={`${platformUrl}/sign-up`}>
+            <a href={`${platformUrl}/sign-up?redirect_url=${encodeURIComponent(window.location.href)}`}>
               <Button size="sm">Sign Up</Button>
             </a>
           </SignedOut>
