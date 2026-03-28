@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { db } from '../_db'
 import { verifyAuth } from '../_middleware'
 import { golfPools, golfPoolEntries } from '../../src/lib/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, count } from 'drizzle-orm'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
@@ -36,11 +36,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Check max entries
     if (pool.maxEntries) {
       const [{ value: entryCount }] = await db
-        .select({ value: golfPoolEntries.id })
+        .select({ value: count() })
         .from(golfPoolEntries)
         .where(eq(golfPoolEntries.poolId, pool.id))
 
-      if (entryCount && pool.maxEntries <= 0) {
+      if (entryCount >= pool.maxEntries) {
         return res.status(400).json({ error: 'Pool is full' })
       }
     }

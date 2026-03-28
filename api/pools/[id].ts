@@ -40,10 +40,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!pool) return res.status(404).json({ error: 'Pool not found' })
 
-    const [{ value: entryCount }] = await db
+    const countResult = await db
       .select({ value: count() })
       .from(golfPoolEntries)
       .where(eq(golfPoolEntries.poolId, pool.id))
+    const entryCount = countResult[0]?.value ?? 0
 
     let userEntry = null
     if (userId) {
