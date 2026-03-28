@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 
@@ -40,9 +41,10 @@ export function Players() {
 
       <div className="grid sm:grid-cols-2 gap-2">
         {golfers.map((golfer: any) => (
-          <div
+          <Link
             key={golfer.id}
-            className="flex items-center gap-3 p-3 rounded-lg border"
+            to={`/players/${golfer.id}`}
+            className="flex items-center gap-3 p-3 rounded-lg border hover:border-[var(--color-green-primary)] transition-colors"
             style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
           >
             {golfer.photoUrl && (
@@ -68,7 +70,7 @@ export function Players() {
                 </div>
               </div>
             )}
-          </div>
+          </Link>
         ))}
       </div>
 
