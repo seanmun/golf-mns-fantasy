@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { db } from '../_db.js'
 import { verifyAuth, isAdmin } from '../_middleware.js'
-import { golfGolfers } from '../../src/lib/db/schema.js'
-import { eq } from 'drizzle-orm'
+import { golfGolfers, golfTournamentField } from '../../src/lib/db/schema.js'
+import { eq, isNull } from 'drizzle-orm'
 
 interface SportsDataPlayer {
   PlayerID: number
@@ -55,11 +55,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       playerMap.set(p.PlayerID, p)
     }
 
+    // Delete old seed golfers that have no externalId
+    // First remove their tournament field entries, then the golfers themselves
+    const seedGolfers = await db
+      .select({ id: golfGolfers.id })
+      .from(golfGolfers)
+      .where(isNull(golfGolfers.externalId))
+
+    if (seedGolfers.length > 0) {
+      for (const sg of seedGolfers) {
+        await db.delete(golfTournamentField).where(eq(golfTournamentField.golferId, sg.id))
+        await db.delete(golfGolfers).where(eq(golfGolfers.id, sg.id))
+      }
+    }
+    const deleted = seedGolfers.length
+
     // Filter to ranked golfers only
     const rankedGolfers = seasonStats.filter((s) => s.WorldGolfRank > 0)
 
     let upserted = 0
-    let skipped = 0
 
     for (const stat of rankedGolfers) {
       const player = playerMap.get(stat.PlayerID)
@@ -76,7 +90,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .limit(1)
 
       if (existing) {
-        // Update ranking and details
         await db
           .update(golfGolfers)
           .set({
@@ -87,9 +100,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             isActive: true,
           })
           .where(eq(golfGolfers.id, existing.id))
-        upserted++
       } else {
-        // Insert new golfer
         await db
           .insert(golfGolfers)
           .values({
@@ -100,8 +111,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             externalId,
             isActive: true,
           })
-        upserted++
       }
+      upserted++
     }
 
     return res.status(200).json({
@@ -109,7 +120,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       season,
       totalRanked: rankedGolfers.length,
       upserted,
-      skipped,
+      deletedSeedGolfers: deleted,
     })
   } catch (error) {
     console.error('POST /api/admin/sync-golfers error:', error)

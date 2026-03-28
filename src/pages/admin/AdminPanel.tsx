@@ -10,6 +10,7 @@ export function AdminPanel() {
   const [scoreJson, setScoreJson] = useState('')
   const [uploadTournamentId, setUploadTournamentId] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [syncing, setSyncing] = useState(false)
 
   const { data: tournamentsData } = useQuery({
     queryKey: ['tournaments'],
@@ -73,6 +74,35 @@ export function AdminPanel() {
   return (
     <div className="max-w-3xl mx-auto px-4 py-12">
       <h1 className="font-display text-4xl mb-8" style={{ color: 'var(--color-text-primary)' }}>ADMIN</h1>
+
+      {/* Sync Golfers */}
+      <section className="mb-10 p-6 rounded-xl border" style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
+        <h2 className="font-display text-xl mb-4" style={{ color: 'var(--color-text-primary)' }}>SYNC GOLFERS</h2>
+        <p className="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>
+          Pull all ranked golfers and their world rankings from sportsdata.io.
+        </p>
+        <button
+          onClick={async () => {
+            setSyncing(true)
+            try {
+              const result = await apiFetch<any>('/api/admin/sync-golfers', {
+                method: 'POST',
+                body: JSON.stringify({ season: 2025 }),
+              })
+              toast.success(`Synced ${result.upserted} golfers (${result.totalRanked} ranked)`)
+            } catch (err: any) {
+              toast.error(err.message)
+            } finally {
+              setSyncing(false)
+            }
+          }}
+          disabled={syncing}
+          className="px-5 py-2.5 rounded-lg text-sm font-medium disabled:opacity-50"
+          style={{ background: 'var(--color-green-primary)', color: '#000' }}
+        >
+          {syncing ? 'Syncing...' : 'Sync Golfers from API'}
+        </button>
+      </section>
 
       {/* Score Upload */}
       <section className="mb-10 p-6 rounded-xl border" style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>

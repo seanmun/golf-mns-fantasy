@@ -1,6 +1,32 @@
 import { Link } from 'react-router-dom'
-import { SignedIn, SignedOut, UserButton } from '@clerk/clerk-react'
+import { SignedIn, SignedOut, UserButton, useAuth } from '@clerk/clerk-react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/Button'
+
+function AdminNav() {
+  const { getToken } = useAuth()
+  const [isAdmin, setIsAdmin] = useState(false)
+
+  useEffect(() => {
+    async function check() {
+      try {
+        const token = await getToken()
+        if (!token) return
+        const res = await fetch('/api/admin/check', {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (res.ok) {
+          const data = await res.json()
+          setIsAdmin(data.isAdmin)
+        }
+      } catch {}
+    }
+    check()
+  }, [getToken])
+
+  if (!isAdmin) return null
+  return <Link to="/admin" className="hover:text-[var(--color-foreground)] transition-colors">Admin</Link>
+}
 
 export function Header() {
   const platformUrl = import.meta.env.VITE_PLATFORM_URL || 'https://mnsfantasy.com'
@@ -18,6 +44,7 @@ export function Header() {
           <Link to="/pools" className="hover:text-[var(--color-foreground)] transition-colors">Pools</Link>
           <SignedIn>
             <Link to="/dashboard" className="hover:text-[var(--color-foreground)] transition-colors">Dashboard</Link>
+            <AdminNav />
           </SignedIn>
           <a href={platformUrl} className="hover:text-[var(--color-foreground)] transition-colors">All Games</a>
         </nav>
