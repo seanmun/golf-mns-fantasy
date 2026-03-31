@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useUser } from '@clerk/clerk-react'
-import { Copy, Users, ChevronRight, Pencil, Trash2, Share2 } from 'lucide-react'
+import { Copy, Users, ChevronRight, Pencil, Trash2, Share2, CheckCircle, Circle } from 'lucide-react'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { useApi } from '@/lib/api/client'
 import { toast } from 'sonner'
@@ -129,6 +129,9 @@ export function PoolDetail() {
         </Link>
       </div>
 
+      {/* Members */}
+      <MembersList poolId={poolId!} rosterSize={pool.rosterSize} />
+
       {/* League manager controls */}
       {isOwner && (
         <div className="mb-10 rounded-xl border p-5" style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
@@ -246,6 +249,61 @@ export function PoolDetail() {
           </p>
         </div>
       )}
+    </div>
+  )
+}
+
+function MembersList({ poolId, rosterSize }: { poolId: string; rosterSize: number }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['pool-members', poolId],
+    queryFn: async () => {
+      const res = await fetch(`/api/pools/leaderboard?poolId=${poolId}`)
+      if (!res.ok) return { leaderboard: [] }
+      return res.json()
+    },
+  })
+
+  if (isLoading) return null
+
+  const members = data?.leaderboard || []
+  if (members.length === 0) {
+    return (
+      <div className="mb-10 rounded-xl border p-5" style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
+        <h3 className="font-display text-lg mb-3" style={{ color: 'var(--color-text-primary)' }}>MEMBERS</h3>
+        <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>No one has joined yet. Share the join code to invite players.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mb-10 rounded-xl border p-5" style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
+      <h3 className="font-display text-lg mb-4" style={{ color: 'var(--color-text-primary)' }}>
+        MEMBERS <span className="text-sm font-normal" style={{ color: 'var(--color-text-muted)' }}>({members.length})</span>
+      </h3>
+      <div className="space-y-2">
+        {members.map((m: any) => {
+          const pickCount = (m.golferIds as string[] || []).length
+          const hasPicks = pickCount === rosterSize
+          return (
+            <div key={m.id} className="flex items-center justify-between py-2 px-3 rounded-lg"
+              style={{ background: 'var(--color-surface-2)' }}>
+              <div className="flex items-center gap-2">
+                {hasPicks ? (
+                  <CheckCircle size={16} style={{ color: 'var(--color-green-primary)' }} />
+                ) : (
+                  <Circle size={16} style={{ color: 'var(--color-text-muted)' }} />
+                )}
+                <span className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                  {m.displayName}
+                </span>
+              </div>
+              <span className="text-xs font-mono" style={{ color: hasPicks ? 'var(--color-green-primary)' : 'var(--color-text-muted)' }}>
+                {hasPicks ? `${pickCount}/${rosterSize} picked` : `${pickCount}/${rosterSize}`}
+              </span>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }

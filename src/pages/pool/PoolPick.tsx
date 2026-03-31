@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useApi } from '@/lib/api/client'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
-import { Check, Flag } from 'lucide-react'
+import { Check, Flag, X, User } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
@@ -14,6 +14,7 @@ export function PoolPick() {
   const [selected, setSelected] = useState<string[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [search, setSearch] = useState('')
+  const [tab, setTab] = useState<'available' | 'roster'>('available')
 
   const { data: poolData, isLoading: poolLoading } = useQuery<{ pool: any; userEntry: any }>({
     queryKey: ['pool', poolId],
@@ -52,13 +53,17 @@ export function PoolPick() {
   if (poolLoading || golfersLoading) return <LoadingSpinner />
 
   const pool = poolData?.pool
+  const allGolfers = golfersData?.golfers || []
+  const golferMap = Object.fromEntries(allGolfers.map((g: any) => [g.id, g]))
   const fieldIds = new Set((fieldData?.golfers || []).map((g: any) => g.id))
-  const golfers = (golfersData?.golfers || []).filter((g: any) =>
+
+  const filteredGolfers = allGolfers.filter((g: any) =>
     !search || g.name.toLowerCase().includes(search.toLowerCase())
   )
 
   const rosterSize = pool?.rosterSize || 6
   const isLocked = pool?.status === 'locked' || pool?.status === 'active' || new Date() >= new Date(pool?.tournamentLockTime)
+  const rosterFull = selected.length >= rosterSize
 
   if (isLocked) {
     return (
@@ -75,11 +80,15 @@ export function PoolPick() {
     setSelected((prev) => {
       if (prev.includes(golferId)) return prev.filter((id) => id !== golferId)
       if (prev.length >= rosterSize) {
-        toast.error(`You can only pick ${rosterSize} golfers`)
+        toast.error(`Drop a player first — roster is full (${rosterSize}/${rosterSize})`)
         return prev
       }
       return [...prev, golferId]
     })
+  }
+
+  function drop(golferId: string) {
+    setSelected((prev) => prev.filter((id) => id !== golferId))
   }
 
   async function handleSubmit() {
@@ -102,82 +111,164 @@ export function PoolPick() {
     }
   }
 
-  return (
-    <div className="max-w-4xl mx-auto px-4 py-12">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="font-display text-4xl" style={{ color: 'var(--color-text-primary)' }}>MAKE PICKS</h1>
-          <p className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>
-            {pool?.name} · Select {rosterSize} golfers
-          </p>
-        </div>
-        <div className="text-right">
-          <div className="font-mono text-2xl font-bold" style={{ color: selected.length === rosterSize ? 'var(--color-green-primary)' : 'var(--color-text-primary)' }}>
-            {selected.length}/{rosterSize}
-          </div>
-          <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>selected</div>
-        </div>
+  const rosterPanel = (
+    <div className="rounded-xl border p-4" style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-display text-lg" style={{ color: 'var(--color-text-primary)' }}>YOUR ROSTER</h3>
+        <span className="font-mono text-sm font-bold" style={{ color: selected.length === rosterSize ? 'var(--color-green-primary)' : 'var(--color-text-muted)' }}>
+          {selected.length}/{rosterSize}
+        </span>
       </div>
 
-      <input
-        type="text"
-        placeholder="Search golfers..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none mb-6"
-        style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
-      />
+      <div className="space-y-1.5">
+        {Array.from({ length: rosterSize }).map((_, i) => {
+          const golferId = selected[i]
+          const golfer = golferId ? golferMap[golferId] : null
 
-      <div className="grid sm:grid-cols-2 gap-2 mb-8">
-        {golfers.map((golfer: any) => {
-          const isSelected = selected.includes(golfer.id)
+          if (!golfer) {
+            return (
+              <div key={i} className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-dashed"
+                style={{ borderColor: 'var(--color-border)' }}>
+                <User size={14} style={{ color: 'var(--color-text-muted)' }} />
+                <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>Empty slot</span>
+              </div>
+            )
+          }
+
           return (
-            <button
-              key={golfer.id}
-              onClick={() => toggle(golfer.id)}
-              className={cn(
-                'flex items-center gap-3 p-3 rounded-lg border text-left transition-all duration-150',
-                isSelected ? 'border-green-500' : ''
-              )}
-              style={{
-                background: isSelected ? 'var(--color-green-dim)' : 'var(--color-surface)',
-                borderColor: isSelected ? 'var(--color-green-primary)' : 'var(--color-border)',
-              }}
-            >
-              <div
-                className="w-5 h-5 rounded-full border flex items-center justify-center flex-shrink-0"
-                style={{
-                  borderColor: isSelected ? 'var(--color-green-primary)' : 'var(--color-border)',
-                  background: isSelected ? 'var(--color-green-primary)' : 'transparent',
-                }}
-              >
-                {isSelected && <Check size={11} color="#000" strokeWidth={3} />}
-              </div>
+            <div key={i} className="flex items-center gap-2 px-3 py-2.5 rounded-lg"
+              style={{ background: 'var(--color-green-dim)', border: '1px solid var(--color-green-muted)' }}>
               <div className="flex-1 min-w-0">
-                <div className="font-medium text-sm truncate flex items-center gap-1.5" style={{ color: 'var(--color-text-primary)' }}>
+                <div className="text-sm font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>
                   {golfer.name}
-                  {fieldIds.has(golfer.id) && (
-                    <Flag size={11} className="text-neon-green flex-shrink-0" />
-                  )}
                 </div>
-                <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                  {golfer.country || 'Unknown'}{golfer.worldRanking ? ` · #${golfer.worldRanking} WR` : ''}
+                <div className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
+                  {golfer.country}{golfer.worldRanking ? ` · #${golfer.worldRanking}` : ''}
                 </div>
               </div>
-            </button>
+              <button onClick={() => drop(golferId)} className="p-1 rounded hover:opacity-70 transition-opacity flex-shrink-0">
+                <X size={14} style={{ color: 'var(--color-score-bogey)' }} />
+              </button>
+            </div>
           )
         })}
       </div>
 
-      <div className="sticky bottom-4">
+      <button
+        onClick={handleSubmit}
+        disabled={submitting || selected.length !== rosterSize}
+        className="w-full mt-4 py-2.5 rounded-lg font-medium text-sm transition-opacity disabled:opacity-40"
+        style={{ background: 'var(--color-green-primary)', color: '#000' }}
+      >
+        {submitting ? 'Saving...' : `Save ${rosterSize} Picks`}
+      </button>
+    </div>
+  )
+
+  return (
+    <div className="max-w-6xl mx-auto px-4 py-12">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="font-display text-3xl sm:text-4xl" style={{ color: 'var(--color-text-primary)' }}>MAKE PICKS</h1>
+          <p className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>
+            {pool?.name} · Select {rosterSize} golfers
+          </p>
+        </div>
+      </div>
+
+      {/* Mobile tabs */}
+      <div className="flex gap-2 mb-4 sm:hidden">
         <button
-          onClick={handleSubmit}
-          disabled={submitting || selected.length !== rosterSize}
-          className="w-full py-3 rounded-lg font-medium text-sm transition-opacity disabled:opacity-40"
-          style={{ background: 'var(--color-green-primary)', color: '#000' }}
+          onClick={() => setTab('available')}
+          className="flex-1 py-2 rounded-lg text-sm font-medium transition-colors"
+          style={{
+            background: tab === 'available' ? 'var(--color-green-primary)' : 'var(--color-surface)',
+            color: tab === 'available' ? '#000' : 'var(--color-text-secondary)',
+            border: tab === 'available' ? 'none' : '1px solid var(--color-border)',
+          }}
         >
-          {submitting ? 'Saving...' : `Save ${rosterSize} Picks`}
+          Available ({filteredGolfers.length})
         </button>
+        <button
+          onClick={() => setTab('roster')}
+          className="flex-1 py-2 rounded-lg text-sm font-medium transition-colors"
+          style={{
+            background: tab === 'roster' ? 'var(--color-green-primary)' : 'var(--color-surface)',
+            color: tab === 'roster' ? '#000' : 'var(--color-text-secondary)',
+            border: tab === 'roster' ? 'none' : '1px solid var(--color-border)',
+          }}
+        >
+          Roster ({selected.length}/{rosterSize})
+        </button>
+      </div>
+
+      <div className="flex gap-6">
+        {/* Available golfers - hidden on mobile when roster tab active */}
+        <div className={cn('flex-1 min-w-0', tab === 'roster' ? 'hidden sm:block' : '')}>
+          <input
+            type="text"
+            placeholder="Search golfers..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none mb-4"
+            style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
+          />
+
+          {rosterFull && (
+            <div className="mb-4 px-3 py-2 rounded-lg text-xs" style={{ background: 'var(--color-green-dim)', color: 'var(--color-green-primary)' }}>
+              Roster full — drop a player from your roster to pick someone new
+            </div>
+          )}
+
+          <div className="grid gap-2">
+            {filteredGolfers.map((golfer: any) => {
+              const isSelected = selected.includes(golfer.id)
+              return (
+                <button
+                  key={golfer.id}
+                  onClick={() => toggle(golfer.id)}
+                  className={cn(
+                    'flex items-center gap-3 p-3 rounded-lg border text-left transition-all duration-150',
+                  )}
+                  style={{
+                    background: isSelected ? 'var(--color-green-dim)' : 'var(--color-surface)',
+                    borderColor: isSelected ? 'var(--color-green-primary)' : 'var(--color-border)',
+                    opacity: rosterFull && !isSelected ? 0.5 : 1,
+                  }}
+                >
+                  <div
+                    className="w-5 h-5 rounded-full border flex items-center justify-center flex-shrink-0"
+                    style={{
+                      borderColor: isSelected ? 'var(--color-green-primary)' : 'var(--color-border)',
+                      background: isSelected ? 'var(--color-green-primary)' : 'transparent',
+                    }}
+                  >
+                    {isSelected && <Check size={11} color="#000" strokeWidth={3} />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm truncate flex items-center gap-1.5" style={{ color: 'var(--color-text-primary)' }}>
+                      {golfer.name}
+                      {fieldIds.has(golfer.id) && (
+                        <Flag size={11} className="text-neon-green flex-shrink-0" />
+                      )}
+                    </div>
+                    <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                      {golfer.country || 'Unknown'}{golfer.worldRanking ? ` · #${golfer.worldRanking} WR` : ''}
+                    </div>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Roster panel - sidebar on desktop, tab on mobile */}
+        <div className={cn('sm:w-80 sm:flex-shrink-0', tab === 'available' ? 'hidden sm:block' : 'w-full')}>
+          <div className="sm:sticky sm:top-20">
+            {rosterPanel}
+          </div>
+        </div>
       </div>
     </div>
   )

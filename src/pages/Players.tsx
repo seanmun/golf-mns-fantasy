@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
-import { ChevronRight } from 'lucide-react'
+import { ChevronRight, User } from 'lucide-react'
 
 export function Players() {
   const [search, setSearch] = useState('')
@@ -48,14 +48,10 @@ export function Players() {
             className="flex items-center gap-3 p-3 rounded-lg border hover:border-[var(--color-green-primary)] transition-colors"
             style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
           >
-            {golfer.photoUrl && (
-              <img
-                src={golfer.photoUrl}
-                alt={golfer.name}
-                className="w-10 h-10 rounded-full object-cover flex-shrink-0"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-              />
-            )}
+            <div className="w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center"
+              style={{ background: 'var(--color-surface-2)', border: '1px solid var(--color-border)' }}>
+              <User size={18} style={{ color: 'var(--color-text-muted)' }} />
+            </div>
             <div className="flex-1 min-w-0">
               <div className="font-medium text-sm truncate" style={{ color: 'var(--color-text-primary)' }}>
                 {golfer.name}

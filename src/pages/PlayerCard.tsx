@@ -1,7 +1,7 @@
 import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, User } from 'lucide-react'
 
 const DEFAULT_SCORING = {
   hole_in_one: 15,
@@ -101,15 +101,10 @@ export function PlayerCard() {
 
       {/* Profile header */}
       <div className="flex items-center gap-5 mb-8">
-        {golfer.photoUrl && (
-          <img
-            src={golfer.photoUrl}
-            alt={golfer.name}
-            className="w-20 h-20 rounded-full object-cover border-2"
-            style={{ borderColor: 'var(--color-border)' }}
-            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-          />
-        )}
+        <div className="w-20 h-20 rounded-full flex-shrink-0 flex items-center justify-center"
+          style={{ background: 'var(--color-surface)', border: '2px solid var(--color-border)' }}>
+          <User size={32} style={{ color: 'var(--color-text-muted)' }} />
+        </div>
         <div>
           <h1 className="font-display text-4xl" style={{ color: 'var(--color-text-primary)' }}>{golfer.name}</h1>
           <div className="flex items-center gap-3 mt-1 text-sm" style={{ color: 'var(--color-text-muted)' }}>
