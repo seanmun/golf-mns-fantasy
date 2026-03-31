@@ -21,10 +21,7 @@ export function PoolDetail() {
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['pool', poolId],
     queryFn: async () => {
-      const headers: Record<string, string> = {}
-      const res = await fetch(`/api/pools/${poolId}`, { headers })
-      if (!res.ok) throw new Error('Pool not found')
-      return res.json()
+      return apiFetch(`/api/pools/${poolId}`) as Promise<{ pool: any; entryCount: number; userEntry: any }>
     },
   })
 

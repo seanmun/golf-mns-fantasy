@@ -88,9 +88,14 @@ export function PlayerCard() {
   const wins = results.filter((r: TournamentResult) => r.rank === 1).length
   const avgFantasyPts = results.length > 0 ? Math.round(totalFantasyPts / results.length) : 0
 
-  // Fantasy points for chart
+  // Fantasy points for chart — scale 0 to max with padding
   const fantasyScores = resultsWithPts.map((r) => r.fantasyPts)
-  const absMax = fantasyScores.length > 0 ? Math.max(...fantasyScores.map(Math.abs), 1) : 20
+  const maxPts = fantasyScores.length > 0 ? Math.max(...fantasyScores) : 0
+  const minPts = fantasyScores.length > 0 ? Math.min(...fantasyScores) : 0
+  // Chart ceiling: round up to nearest 25 for clean scale
+  const chartMax = Math.ceil(Math.max(maxPts, 25) / 25) * 25
+  const chartMin = Math.min(minPts, 0)
+  const chartRange = chartMax - chartMin || 1
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-12">
@@ -153,31 +158,40 @@ export function PlayerCard() {
       {fantasyScores.length > 1 && (
         <div className="rounded-xl border p-5 mb-8" style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
           <h2 className="font-display text-lg mb-1" style={{ color: 'var(--color-text-primary)' }}>FANTASY POINTS TREND</h2>
-          <p className="text-xs mb-4" style={{ color: 'var(--color-text-muted)' }}>Points per tournament using default scoring</p>
-          <div className="flex items-end gap-2 h-40">
-            {resultsWithPts.map((r, i) => {
-              const pts = r.fantasyPts
-              const height = Math.max((Math.abs(pts) / absMax) * 100, 12)
-              const isPositive = pts >= 0
-              return (
-                <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                  <span className="text-[10px] font-mono font-bold" style={{ color: isPositive ? 'var(--color-green-primary)' : 'var(--color-score-bogey)' }}>
-                    {pts > 0 ? `+${pts}` : pts}
-                  </span>
-                  <div
-                    className="w-full rounded-t min-h-[8px]"
-                    style={{
-                      height: `${height}%`,
-                      background: isPositive ? 'var(--color-green-primary)' : 'var(--color-score-bogey)',
-                      opacity: 0.8,
-                    }}
-                  />
-                  <span className="text-[8px] truncate w-full text-center leading-tight" style={{ color: 'var(--color-text-muted)' }}>
-                    {r.tournamentName.length > 14 ? r.tournamentName.slice(0, 14) + '…' : r.tournamentName}
-                  </span>
-                </div>
-              )
-            })}
+          <p className="text-xs mb-4" style={{ color: 'var(--color-text-muted)' }}>Points per tournament using default scoring · Avg: {avgFantasyPts} pts</p>
+          <div className="flex gap-2">
+            {/* Y-axis labels */}
+            <div className="flex flex-col justify-between h-48 text-[9px] font-mono pr-1" style={{ color: 'var(--color-text-muted)' }}>
+              <span>{chartMax}</span>
+              <span>{Math.round(chartMax / 2)}</span>
+              <span>0</span>
+            </div>
+            {/* Bars */}
+            <div className="flex-1 flex items-end gap-2 h-48 border-l border-b" style={{ borderColor: 'var(--color-border)' }}>
+              {resultsWithPts.map((r, i) => {
+                const pts = r.fantasyPts
+                const height = Math.max(((pts - chartMin) / chartRange) * 100, 3)
+                const isPositive = pts >= 0
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                    <span className="text-[10px] font-mono font-bold" style={{ color: isPositive ? 'var(--color-green-primary)' : 'var(--color-score-bogey)' }}>
+                      {pts}
+                    </span>
+                    <div
+                      className="w-full rounded-t"
+                      style={{
+                        height: `${height}%`,
+                        background: isPositive ? 'var(--color-green-primary)' : 'var(--color-score-bogey)',
+                        opacity: 0.8,
+                      }}
+                    />
+                    <span className="text-[8px] truncate w-full text-center leading-tight" style={{ color: 'var(--color-text-muted)' }}>
+                      {r.tournamentName.length > 12 ? r.tournamentName.slice(0, 12) + '…' : r.tournamentName}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         </div>
       )}

@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useApi } from '@/lib/api/client'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
-import { Check, Flag, X, User } from 'lucide-react'
+import { Flag, User } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
@@ -19,9 +19,7 @@ export function PoolPick() {
   const { data: poolData, isLoading: poolLoading } = useQuery<{ pool: any; userEntry: any }>({
     queryKey: ['pool', poolId],
     queryFn: async () => {
-      const res = await fetch(`/api/pools/${poolId}`)
-      if (!res.ok) throw new Error('Pool not found')
-      const data = await res.json()
+      const data = await apiFetch(`/api/pools/${poolId}`) as { pool: any; userEntry: any }
       if (data.userEntry?.golferIds?.length) {
         setSelected(data.userEntry.golferIds)
       }
@@ -139,15 +137,16 @@ export function PoolPick() {
             <div key={i} className="flex items-center gap-2 px-3 py-2.5 rounded-lg"
               style={{ background: 'var(--color-green-dim)', border: '1px solid var(--color-green-muted)' }}>
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium truncate" style={{ color: 'var(--color-text-primary)' }}>
+                <Link to={`/players/${golferId}`} className="text-sm font-medium truncate block hover:text-neon-green transition-colors" style={{ color: 'var(--color-text-primary)' }}>
                   {golfer.name}
-                </div>
+                </Link>
                 <div className="text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
                   {golfer.country}{golfer.worldRanking ? ` · #${golfer.worldRanking}` : ''}
                 </div>
               </div>
-              <button onClick={() => drop(golferId)} className="p-1 rounded hover:opacity-70 transition-opacity flex-shrink-0">
-                <X size={14} style={{ color: 'var(--color-score-bogey)' }} />
+              <button onClick={() => drop(golferId)} className="px-2 py-1 rounded text-[10px] font-medium hover:opacity-80 transition-opacity flex-shrink-0"
+                style={{ background: 'var(--color-score-bogey)', color: '#fff' }}>
+                Drop
               </button>
             </div>
           )
@@ -225,39 +224,49 @@ export function PoolPick() {
             {filteredGolfers.map((golfer: any) => {
               const isSelected = selected.includes(golfer.id)
               return (
-                <button
+                <div
                   key={golfer.id}
-                  onClick={() => toggle(golfer.id)}
-                  className={cn(
-                    'flex items-center gap-3 p-3 rounded-lg border text-left transition-all duration-150',
-                  )}
+                  className="flex items-center gap-3 p-3 rounded-lg border transition-all duration-150"
                   style={{
                     background: isSelected ? 'var(--color-green-dim)' : 'var(--color-surface)',
                     borderColor: isSelected ? 'var(--color-green-primary)' : 'var(--color-border)',
                     opacity: rosterFull && !isSelected ? 0.5 : 1,
                   }}
                 >
-                  <div
-                    className="w-5 h-5 rounded-full border flex items-center justify-center flex-shrink-0"
-                    style={{
-                      borderColor: isSelected ? 'var(--color-green-primary)' : 'var(--color-border)',
-                      background: isSelected ? 'var(--color-green-primary)' : 'transparent',
-                    }}
-                  >
-                    {isSelected && <Check size={11} color="#000" strokeWidth={3} />}
-                  </div>
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm truncate flex items-center gap-1.5" style={{ color: 'var(--color-text-primary)' }}>
+                    <Link
+                      to={`/players/${golfer.id}`}
+                      className="font-medium text-sm truncate flex items-center gap-1.5 hover:text-neon-green transition-colors"
+                      style={{ color: 'var(--color-text-primary)' }}
+                    >
                       {golfer.name}
                       {fieldIds.has(golfer.id) && (
                         <Flag size={11} className="text-neon-green flex-shrink-0" />
                       )}
-                    </div>
+                    </Link>
                     <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
                       {golfer.country || 'Unknown'}{golfer.worldRanking ? ` · #${golfer.worldRanking} WR` : ''}
                     </div>
                   </div>
-                </button>
+                  {isSelected ? (
+                    <button
+                      onClick={() => toggle(golfer.id)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-medium flex-shrink-0 transition-colors"
+                      style={{ background: 'var(--color-score-bogey)', color: '#fff' }}
+                    >
+                      Drop
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => toggle(golfer.id)}
+                      disabled={rosterFull}
+                      className="px-3 py-1.5 rounded-lg text-xs font-medium flex-shrink-0 transition-colors disabled:opacity-40"
+                      style={{ background: 'var(--color-green-primary)', color: '#000' }}
+                    >
+                      Pick
+                    </button>
+                  )}
+                </div>
               )
             })}
           </div>
