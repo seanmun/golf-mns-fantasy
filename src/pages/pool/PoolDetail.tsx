@@ -1,8 +1,7 @@
-import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import { useUser } from '@clerk/clerk-react'
-import { Copy, Users, ChevronRight, Pencil, Trash2, Share2, CheckCircle, Circle } from 'lucide-react'
+import { Copy, Users, ChevronRight, Share2, CheckCircle, Circle, Settings } from 'lucide-react'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { useApi } from '@/lib/api/client'
 import { toast } from 'sonner'
@@ -10,15 +9,9 @@ import { toast } from 'sonner'
 export function PoolDetail() {
   const { poolId } = useParams<{ poolId: string }>()
   const { user } = useUser()
-  const navigate = useNavigate()
   const { apiFetch } = useApi()
-  const [editing, setEditing] = useState(false)
-  const [editName, setEditName] = useState('')
-  const [editDescription, setEditDescription] = useState('')
-  const [confirmDelete, setConfirmDelete] = useState(false)
-  const [saving, setSaving] = useState(false)
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ['pool', poolId],
     queryFn: async () => {
       return apiFetch(`/api/pools/${poolId}`) as Promise<{ pool: any; entryCount: number; userEntry: any }>
@@ -129,108 +122,16 @@ export function PoolDetail() {
       {/* Members */}
       <MembersList poolId={poolId!} rosterSize={pool.rosterSize} />
 
-      {/* League manager controls */}
+      {/* League manager button */}
       {isOwner && (
-        <div className="mb-10 rounded-xl border p-5" style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
-          <h3 className="font-display text-lg mb-3" style={{ color: 'var(--color-text-primary)' }}>MANAGE POOL</h3>
-
-          {editing ? (
-            <div className="space-y-3">
-              <input
-                type="text"
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                placeholder="Pool name"
-                className="w-full px-3 py-2 rounded-lg border text-sm outline-none"
-                style={{ background: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
-              />
-              <textarea
-                value={editDescription}
-                onChange={(e) => setEditDescription(e.target.value)}
-                placeholder="Description (optional)"
-                rows={3}
-                className="w-full px-3 py-2 rounded-lg border text-sm outline-none resize-none"
-                style={{ background: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
-              />
-              <div className="flex gap-2">
-                <button
-                  onClick={async () => {
-                    setSaving(true)
-                    try {
-                      await apiFetch(`/api/pools/${poolId}`, {
-                        method: 'PUT',
-                        body: JSON.stringify({ name: editName, description: editDescription }),
-                      })
-                      toast.success('Pool updated')
-                      setEditing(false)
-                      refetch()
-                    } catch (err: any) {
-                      toast.error(err.message)
-                    } finally {
-                      setSaving(false)
-                    }
-                  }}
-                  disabled={saving}
-                  className="px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
-                  style={{ background: 'var(--color-green-primary)', color: '#000' }}
-                >
-                  {saving ? 'Saving...' : 'Save'}
-                </button>
-                <button
-                  onClick={() => setEditing(false)}
-                  className="px-4 py-2 rounded-lg text-sm border"
-                  style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex gap-3">
-              <button
-                onClick={() => { setEditName(pool.name); setEditDescription(pool.description || ''); setEditing(true) }}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm border"
-                style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}
-              >
-                <Pencil size={13} /> Edit Pool
-              </button>
-              {confirmDelete ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-sm" style={{ color: '#ef4444' }}>Are you sure?</span>
-                  <button
-                    onClick={async () => {
-                      try {
-                        await apiFetch(`/api/pools/${poolId}`, { method: 'DELETE' })
-                        toast.success('Pool deleted')
-                        navigate('/pools')
-                      } catch (err: any) {
-                        toast.error(err.message)
-                      }
-                    }}
-                    className="px-3 py-1.5 rounded-lg text-sm font-medium"
-                    style={{ background: '#ef4444', color: '#fff' }}
-                  >
-                    Yes, delete
-                  </button>
-                  <button
-                    onClick={() => setConfirmDelete(false)}
-                    className="px-3 py-1.5 rounded-lg text-sm border"
-                    style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setConfirmDelete(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm border"
-                  style={{ borderColor: '#ef4444', color: '#ef4444' }}
-                >
-                  <Trash2 size={13} /> Delete Pool
-                </button>
-              )}
-            </div>
-          )}
+        <div className="mb-10">
+          <Link
+            to={`/pools/${poolId}/manage`}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium text-sm border"
+            style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}
+          >
+            <Settings size={14} /> Manage Pool
+          </Link>
         </div>
       )}
 

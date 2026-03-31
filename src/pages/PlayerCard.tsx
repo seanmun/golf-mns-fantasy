@@ -155,46 +155,58 @@ export function PlayerCard() {
       )}
 
       {/* Fantasy points trend chart */}
-      {fantasyScores.length > 1 && (
+      {fantasyScores.length > 1 && (() => {
+        const CHART_H = 180 // px
+        return (
         <div className="rounded-xl border p-5 mb-8" style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
           <h2 className="font-display text-lg mb-1" style={{ color: 'var(--color-text-primary)' }}>FANTASY POINTS TREND</h2>
-          <p className="text-xs mb-4" style={{ color: 'var(--color-text-muted)' }}>Points per tournament using default scoring · Avg: {avgFantasyPts} pts</p>
-          <div className="flex gap-2">
-            {/* Y-axis labels */}
-            <div className="flex flex-col justify-between h-48 text-[9px] font-mono pr-1" style={{ color: 'var(--color-text-muted)' }}>
+          <p className="text-xs mb-4" style={{ color: 'var(--color-text-muted)' }}>Points per tournament · Avg: {avgFantasyPts} pts</p>
+          <div className="flex gap-3">
+            {/* Y-axis */}
+            <div className="flex flex-col justify-between text-[9px] font-mono text-right" style={{ height: CHART_H, color: 'var(--color-text-muted)', minWidth: 28 }}>
               <span>{chartMax}</span>
-              <span>{Math.round(chartMax / 2)}</span>
-              <span>0</span>
+              <span>{Math.round((chartMax + chartMin) / 2)}</span>
+              <span>{chartMin}</span>
             </div>
             {/* Bars */}
-            <div className="flex-1 flex items-end gap-2 h-48 border-l border-b" style={{ borderColor: 'var(--color-border)' }}>
+            <div className="flex-1 flex items-end gap-3 border-l border-b pl-1" style={{ height: CHART_H, borderColor: 'var(--color-border)' }}>
               {resultsWithPts.map((r, i) => {
                 const pts = r.fantasyPts
-                const height = Math.max(((pts - chartMin) / chartRange) * 100, 3)
+                const barH = Math.max(Math.round(((pts - chartMin) / chartRange) * CHART_H), 4)
                 const isPositive = pts >= 0
                 return (
-                  <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                    <span className="text-[10px] font-mono font-bold" style={{ color: isPositive ? 'var(--color-green-primary)' : 'var(--color-score-bogey)' }}>
+                  <div key={i} className="flex-1 flex flex-col items-center justify-end" style={{ height: CHART_H }}>
+                    <span className="text-[10px] font-mono font-bold mb-1" style={{ color: isPositive ? 'var(--color-green-primary)' : 'var(--color-score-bogey)' }}>
                       {pts}
                     </span>
                     <div
                       className="w-full rounded-t"
                       style={{
-                        height: `${height}%`,
+                        height: barH,
                         background: isPositive ? 'var(--color-green-primary)' : 'var(--color-score-bogey)',
-                        opacity: 0.8,
+                        opacity: 0.85,
                       }}
                     />
-                    <span className="text-[8px] truncate w-full text-center leading-tight" style={{ color: 'var(--color-text-muted)' }}>
-                      {r.tournamentName.length > 12 ? r.tournamentName.slice(0, 12) + '…' : r.tournamentName}
-                    </span>
                   </div>
                 )
               })}
             </div>
           </div>
+          {/* X-axis labels */}
+          <div className="flex gap-3 mt-1" style={{ marginLeft: 31 }}>
+            <div className="flex-1 flex gap-3 pl-1">
+              {resultsWithPts.map((r, i) => (
+                <div key={i} className="flex-1 text-center">
+                  <span className="text-[8px] leading-tight block truncate" style={{ color: 'var(--color-text-muted)' }}>
+                    {r.tournamentName.length > 10 ? r.tournamentName.slice(0, 10) + '…' : r.tournamentName}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
-      )}
+        )
+      })()}
 
       {/* Recent tournament results */}
       {results.length > 0 ? (
