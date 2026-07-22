@@ -1,11 +1,15 @@
 import {
-  pgTable, text, integer, boolean, timestamp,
+  pgSchema, text, integer, boolean, timestamp,
   uuid, decimal, jsonb, index,
 } from 'drizzle-orm/pg-core'
 
+// All golf tables live in the `golf` Postgres schema; shared cross-game
+// tables stay in `public`.
+export const golfSchema = pgSchema('golf')
+
 // ─── USERS ────────────────────────────────────────────────────────────────────
 
-export const golfUsers = pgTable('golf_users', {
+export const golfUsers = golfSchema.table('users', {
   id: text('id').primaryKey(), // Clerk user ID
   email: text('email').notNull().unique(),
   displayName: text('display_name').notNull(),
@@ -15,7 +19,7 @@ export const golfUsers = pgTable('golf_users', {
 
 // ─── TOURNAMENTS ──────────────────────────────────────────────────────────────
 
-export const golfTournaments = pgTable('golf_tournaments', {
+export const golfTournaments = golfSchema.table('tournaments', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: text('name').notNull(),
   course: text('course').notNull(),
@@ -31,7 +35,7 @@ export const golfTournaments = pgTable('golf_tournaments', {
 
 // ─── GOLFERS ──────────────────────────────────────────────────────────────────
 
-export const golfGolfers = pgTable('golf_golfers', {
+export const golfGolfers = golfSchema.table('golfers', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: text('name').notNull(),
   country: text('country'),
@@ -44,7 +48,7 @@ export const golfGolfers = pgTable('golf_golfers', {
 
 // ─── TOURNAMENT FIELD ─────────────────────────────────────────────────────────
 
-export const golfTournamentField = pgTable('golf_tournament_field', {
+export const golfTournamentField = golfSchema.table('tournament_field', {
   id: uuid('id').primaryKey().defaultRandom(),
   tournamentId: uuid('tournament_id').notNull().references(() => golfTournaments.id),
   golferId: uuid('golfer_id').notNull().references(() => golfGolfers.id),
@@ -56,7 +60,7 @@ export const golfTournamentField = pgTable('golf_tournament_field', {
 
 // ─── GOLFER ROUND RESULTS ─────────────────────────────────────────────────────
 
-export const golfGolferResults = pgTable('golf_golfer_results', {
+export const golfGolferResults = golfSchema.table('golfer_results', {
   id: uuid('id').primaryKey().defaultRandom(),
   tournamentId: uuid('tournament_id').notNull().references(() => golfTournaments.id),
   golferId: uuid('golfer_id').notNull().references(() => golfGolfers.id),
@@ -82,7 +86,7 @@ export const golfGolferResults = pgTable('golf_golfer_results', {
 
 // ─── POOLS ────────────────────────────────────────────────────────────────────
 
-export const golfPools = pgTable('golf_pools', {
+export const golfPools = golfSchema.table('pools', {
   id: uuid('id').primaryKey().defaultRandom(),
   tournamentId: uuid('tournament_id').notNull().references(() => golfTournaments.id),
   name: text('name').notNull(),
@@ -111,7 +115,7 @@ export const golfPools = pgTable('golf_pools', {
 
 // ─── POOL ENTRIES ─────────────────────────────────────────────────────────────
 
-export const golfPoolEntries = pgTable('golf_pool_entries', {
+export const golfPoolEntries = golfSchema.table('pool_entries', {
   id: uuid('id').primaryKey().defaultRandom(),
   poolId: uuid('pool_id').notNull().references(() => golfPools.id),
   userId: text('user_id').notNull().references(() => golfUsers.id),

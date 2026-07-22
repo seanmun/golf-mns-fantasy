@@ -7,5 +7,6 @@ export default {
   dbCredentials: {
     url: process.env.DATABASE_URL!,
   },
-  tablesFilter: ['golf_*'],
+  // All golf tables live in the golf schema; push can never touch public.
+  schemaFilter: ['golf'],
 } satisfies Config
