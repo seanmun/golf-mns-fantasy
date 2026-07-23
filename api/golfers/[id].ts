@@ -45,13 +45,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ golfer, results: [] })
     }
 
-    // Fetch 2025 tournaments
-    const tournamentsRes = await fetch(`${baseUrl}/Tournaments/2025?key=${apiKey}`)
-    if (!tournamentsRes.ok) {
-      return res.status(200).json({ golfer, results: [] })
+    // Current season, topped up from the prior season early in the year.
+    const season = new Date().getFullYear()
+    const tournaments: any[] = []
+    for (const yr of [season, season - 1]) {
+      const r = await fetch(`${baseUrl}/Tournaments/${yr}?key=${apiKey}`)
+      if (r.ok) tournaments.push(...(await r.json()))
+      if (tournaments.filter((t: any) => t.IsOver).length >= 5) break
     }
-
-    const tournaments: any[] = await tournamentsRes.json()
 
     // Get the last 5 completed tournaments
     const completed = tournaments
