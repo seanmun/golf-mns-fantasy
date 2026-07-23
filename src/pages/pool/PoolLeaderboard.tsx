@@ -4,6 +4,29 @@ import { useUser } from '@clerk/clerk-react'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { ScoreBadge } from '@/components/shared/ScoreBadge'
 import { ChevronLeft } from 'lucide-react'
+import {
+  calculateGolferPoints,
+  DEFAULT_SCORING,
+  type ScoringConfig,
+} from '@/lib/scoring/engine'
+
+function golferPoints(results: any, config: ScoringConfig): number {
+  return calculateGolferPoints(
+    {
+      hole_in_ones: results.holeInOnes,
+      albatrosses: results.albatrosses,
+      eagles: results.eagles,
+      birdies: results.birdies,
+      pars: results.pars,
+      bogeys: results.bogeys,
+      double_bogeys: results.doubleBogeys,
+      worse_than_double: results.worseThanDouble,
+      is_cut: results.isCut,
+      position: results.position,
+    },
+    config
+  )
+}
 
 export function PoolLeaderboard() {
   const { poolId } = useParams<{ poolId: string }>()
@@ -14,7 +37,18 @@ export function PoolLeaderboard() {
     queryFn: async () => {
       const res = await fetch(`/api/pools/leaderboard?poolId=${poolId}`)
       if (!res.ok) throw new Error('Failed to load leaderboard')
-      return res.json()
+      const json = await res.json()
+      // Fire-and-forget: nudge the live score sync. Server-side throttle
+      // means this only hits sportsdata every few minutes no matter how
+      // many viewers are on the page.
+      if (json?.pool?.tournamentId) {
+        void fetch('/api/scoring/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tournamentId: json.pool.tournamentId }),
+        }).catch(() => {})
+      }
+      return json
     },
     refetchInterval: 60_000, // refresh every minute during active tournament
   })
@@ -79,7 +113,7 @@ export function PoolLeaderboard() {
                         {golfer?.name || 'Unknown'}
                       </span>
                       {results ? (
-                        <ScoreBadge score={results.birdies * 3 + results.eagles * 8 + results.holeInOnes * 15 - results.bogeys - results.doubleBogeys * 3 - results.worseThanDouble * 5} />
+                        <ScoreBadge score={golferPoints(results, pool?.scoringConfig ?? DEFAULT_SCORING)} />
                       ) : (
                         <span className="text-xs font-mono" style={{ color: 'var(--color-text-muted)' }}>-</span>
                       )}

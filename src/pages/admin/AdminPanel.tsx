@@ -11,6 +11,9 @@ export function AdminPanel() {
   const [uploadTournamentId, setUploadTournamentId] = useState('')
   const [uploading, setUploading] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [syncScoresTournamentId, setSyncScoresTournamentId] = useState('')
+  const [syncingScores, setSyncingScores] = useState(false)
 
   const { data: tournamentsData } = useQuery({
     queryKey: ['tournaments'],
@@ -87,7 +90,7 @@ export function AdminPanel() {
             try {
               const result = await apiFetch<any>('/api/admin/sync-golfers', {
                 method: 'POST',
-                body: JSON.stringify({ season: 2025 }),
+                body: JSON.stringify({ season: new Date().getFullYear() }),
               })
               toast.success(`Synced ${result.upserted} golfers (${result.totalRanked} ranked)`)
             } catch (err: any) {
@@ -101,6 +104,77 @@ export function AdminPanel() {
           style={{ background: 'var(--color-green-primary)', color: '#000' }}
         >
           {syncing ? 'Syncing...' : 'Sync Golfers from API'}
+        </button>
+      </section>
+
+      {/* Import Tournaments */}
+      <section className="mb-10 p-6 rounded-xl border" style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
+        <h2 className="font-display text-xl mb-4" style={{ color: 'var(--color-text-primary)' }}>IMPORT TOURNAMENTS</h2>
+        <p className="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>
+          Pull every remaining event of the current season from sportsdata.io. Safe to re-run — updates existing events in place.
+        </p>
+        <button
+          onClick={async () => {
+            setImporting(true)
+            try {
+              const result = await apiFetch<any>('/api/admin/tournaments', {
+                method: 'POST',
+                body: JSON.stringify({ season: new Date().getFullYear() }),
+              })
+              toast.success(`Tournaments: ${result.created} created, ${result.updated} updated`)
+            } catch (err: any) {
+              toast.error(err.message)
+            } finally {
+              setImporting(false)
+            }
+          }}
+          disabled={importing}
+          className="px-5 py-2.5 rounded-lg text-sm font-medium disabled:opacity-50"
+          style={{ background: 'var(--color-green-primary)', color: '#000' }}
+        >
+          {importing ? 'Importing...' : 'Import Season Schedule'}
+        </button>
+      </section>
+
+      {/* Sync Live Scores */}
+      <section className="mb-10 p-6 rounded-xl border" style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
+        <h2 className="font-display text-xl mb-4" style={{ color: 'var(--color-text-primary)' }}>SYNC LIVE SCORES</h2>
+        <p className="text-sm mb-4" style={{ color: 'var(--color-text-secondary)' }}>
+          Pull the live leaderboard for a tournament: updates the field, round scores, cuts, positions — then recalculates every pool. Also runs automatically while people watch a leaderboard.
+        </p>
+        <select value={syncScoresTournamentId} onChange={(e) => setSyncScoresTournamentId(e.target.value)}
+          className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none mb-3"
+          style={{ background: 'var(--color-surface-2)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}>
+          <option value="">Select tournament</option>
+          {tournaments.map((t: any) => (
+            <option key={t.id} value={t.id}>{t.name}</option>
+          ))}
+        </select>
+        <button
+          onClick={async () => {
+            if (!syncScoresTournamentId) { toast.error('Select a tournament'); return }
+            setSyncingScores(true)
+            try {
+              const r = await apiFetch<any>('/api/scoring/sync', {
+                method: 'POST',
+                body: JSON.stringify({ tournamentId: syncScoresTournamentId, force: true }),
+              })
+              if (r.synced) {
+                toast.success(`Synced: ${r.resultsUpserted} results, ${r.fieldAdded} field adds, ${r.entriesRecalculated} entries rescored (${r.tournamentStatus})`)
+              } else {
+                toast.info(`Not synced: ${r.reason}`)
+              }
+            } catch (err: any) {
+              toast.error(err.message)
+            } finally {
+              setSyncingScores(false)
+            }
+          }}
+          disabled={syncingScores}
+          className="px-5 py-2.5 rounded-lg text-sm font-medium disabled:opacity-50"
+          style={{ background: 'var(--color-green-primary)', color: '#000' }}
+        >
+          {syncingScores ? 'Syncing...' : 'Sync Scores Now'}
         </button>
       </section>
 

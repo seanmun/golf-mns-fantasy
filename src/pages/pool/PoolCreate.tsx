@@ -26,9 +26,27 @@ export function PoolCreate() {
     },
   })
 
-  const tournaments = tournamentsData?.tournaments?.filter(
-    (t: any) => t.status === 'upcoming' || t.status === 'active'
-  ) || []
+  const [showAllEvents, setShowAllEvents] = useState(false)
+
+  const tournaments = (tournamentsData?.tournaments?.filter(
+    (t: any) =>
+      (t.status === 'upcoming' || t.status === 'active') &&
+      new Date(t.endDate).getTime() > Date.now() - 24 * 60 * 60 * 1000
+  ) || []).sort(
+    (a: any, b: any) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
+  )
+
+  const featured = tournaments[0]
+  const nextThree = tournaments.slice(1, 4)
+  const rest = tournaments.slice(4)
+  const selected = tournaments.find((t: any) => t.id === form.tournamentId)
+
+  const fmtDates = (t: any) => {
+    const s = new Date(t.startDate)
+    const e = new Date(t.endDate)
+    const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' }
+    return `${s.toLocaleDateString('en-US', opts)}–${e.toLocaleDateString('en-US', opts)}`
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -59,7 +77,95 @@ export function PoolCreate() {
         CREATE POOL
       </h1>
 
+      {/* Step 1: pick the event */}
+      {!selected ? (
+        <div className="space-y-3">
+          <p className="text-sm mb-2" style={{ color: 'var(--color-text-secondary)' }}>
+            Which event is this pool for?
+          </p>
+
+          {featured && (
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, tournamentId: featured.id })}
+              className="w-full text-left p-5 rounded-xl border-2 transition-colors hover:opacity-90"
+              style={{ background: 'var(--color-surface)', borderColor: 'var(--color-green-primary)' }}
+            >
+              <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: 'var(--color-green-primary)' }}>
+                {featured.status === 'active' ? 'Live now' : 'Up next'}
+              </div>
+              <div className="font-display text-2xl" style={{ color: 'var(--color-text-primary)' }}>{featured.name}</div>
+              <div className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>
+                {featured.course} · {fmtDates(featured)}
+              </div>
+            </button>
+          )}
+
+          {nextThree.map((t: any) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setForm({ ...form, tournamentId: t.id })}
+              className="w-full text-left px-4 py-3 rounded-lg border transition-colors hover:opacity-90"
+              style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+            >
+              <span className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>{t.name}</span>
+              <span className="text-xs ml-2" style={{ color: 'var(--color-text-muted)' }}>{fmtDates(t)}</span>
+            </button>
+          ))}
+
+          {rest.length > 0 && !showAllEvents && (
+            <button
+              type="button"
+              onClick={() => setShowAllEvents(true)}
+              className="w-full py-2 text-sm"
+              style={{ color: 'var(--color-text-secondary)' }}
+            >
+              Show all {tournaments.length} events ↓
+            </button>
+          )}
+          {showAllEvents &&
+            rest.map((t: any) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setForm({ ...form, tournamentId: t.id })}
+                className="w-full text-left px-4 py-3 rounded-lg border transition-colors hover:opacity-90"
+                style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+              >
+                <span className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>{t.name}</span>
+                <span className="text-xs ml-2" style={{ color: 'var(--color-text-muted)' }}>{fmtDates(t)}</span>
+              </button>
+            ))}
+
+          {tournaments.length === 0 && (
+            <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>
+              No upcoming events available — ask the site admin to import the season schedule.
+            </p>
+          )}
+        </div>
+      ) : (
       <form onSubmit={handleSubmit} className="space-y-5">
+        <div
+          className="flex items-center justify-between p-4 rounded-lg border"
+          style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+        >
+          <div>
+            <div className="font-medium text-sm" style={{ color: 'var(--color-text-primary)' }}>{selected.name}</div>
+            <div className="text-xs mt-0.5" style={{ color: 'var(--color-text-secondary)' }}>
+              {selected.course} · {fmtDates(selected)}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setForm({ ...form, tournamentId: '' })}
+            className="text-xs underline"
+            style={{ color: 'var(--color-text-secondary)' }}
+          >
+            Change event
+          </button>
+        </div>
+
         <div>
           <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text-secondary)' }}>
             Pool Name
@@ -77,28 +183,6 @@ export function PoolCreate() {
             }}
             required
           />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text-secondary)' }}>
-            Tournament
-          </label>
-          <select
-            value={form.tournamentId}
-            onChange={(e) => setForm({ ...form, tournamentId: e.target.value })}
-            className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none"
-            style={{
-              background: 'var(--color-surface)',
-              borderColor: 'var(--color-border)',
-              color: form.tournamentId ? 'var(--color-text-primary)' : 'var(--color-text-muted)',
-            }}
-            required
-          >
-            <option value="">Select a tournament</option>
-            {tournaments.map((t: any) => (
-              <option key={t.id} value={t.id}>{t.name} — {t.course}</option>
-            ))}
-          </select>
         </div>
 
         <div>
@@ -157,6 +241,7 @@ export function PoolCreate() {
           {submitting ? 'Creating...' : 'Create Pool'}
         </button>
       </form>
+      )}
     </div>
   )
 }

@@ -35,6 +35,7 @@ export const golfTournaments = golfSchema.table('tournaments', {
   status: text('status').notNull().default('upcoming'), // upcoming | active | completed | cancelled
   season: integer('season').notNull(),
   externalId: text('external_id'),
+  lastSyncedAt: timestamp('last_synced_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 
