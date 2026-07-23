@@ -60,10 +60,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         location: t.Location || null,
         startDate: new Date(t.StartDate),
         endDate: new Date(t.EndDate),
-        // Rosters lock when round 1 begins; sportsdata StartDate is the
-        // day of round 1 (midnight). First tee is morning-of, so
-        // midnight-of-start is a safe default the admin can adjust.
-        lockTime: new Date(t.StartDate),
+        // Rosters lock the morning of round 1. sportsdata StartDate is
+        // midnight (UTC on Vercel) of round-1 day; +11h ≈ 6:00 AM CT,
+        // before the earliest tee time. Admin can adjust per event.
+        lockTime: new Date(new Date(t.StartDate).getTime() + 11 * 60 * 60 * 1000),
         season,
       }
 
