@@ -1,5 +1,5 @@
 import {
-  pgSchema, text, integer, boolean, timestamp,
+  pgTable, pgSchema, text, integer, boolean, timestamp,
   uuid, decimal, jsonb, index,
 } from 'drizzle-orm/pg-core'
 
@@ -9,12 +9,17 @@ export const golfSchema = pgSchema('golf')
 
 // ─── USERS ────────────────────────────────────────────────────────────────────
 
-export const golfUsers = golfSchema.table('users', {
+// Shared cross-game identity table in `public` (same definition as the
+// wnba app). email is NOT unique in the live table. Not managed by this
+// app's db:push (schemaFilter is ['golf']).
+export const users = pgTable('users', {
   id: text('id').primaryKey(), // Clerk user ID
-  email: text('email').notNull().unique(),
+  email: text('email').notNull(),
   displayName: text('display_name').notNull(),
   avatarUrl: text('avatar_url'),
+  role: text('role').notNull().default('owner'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })
 
 // ─── TOURNAMENTS ──────────────────────────────────────────────────────────────
@@ -91,7 +96,7 @@ export const golfPools = golfSchema.table('pools', {
   tournamentId: uuid('tournament_id').notNull().references(() => golfTournaments.id),
   name: text('name').notNull(),
   description: text('description'),
-  createdBy: text('created_by').notNull().references(() => golfUsers.id),
+  createdBy: text('created_by').notNull().references(() => users.id),
   rosterSize: integer('roster_size').notNull().default(6),
   maxEntries: integer('max_entries'),
   isPublic: boolean('is_public').notNull().default(true),
@@ -118,7 +123,7 @@ export const golfPools = golfSchema.table('pools', {
 export const golfPoolEntries = golfSchema.table('pool_entries', {
   id: uuid('id').primaryKey().defaultRandom(),
   poolId: uuid('pool_id').notNull().references(() => golfPools.id),
-  userId: text('user_id').notNull().references(() => golfUsers.id),
+  userId: text('user_id').notNull().references(() => users.id),
   golferIds: jsonb('golfer_ids').notNull().default([]),
   totalPoints: decimal('total_points', { precision: 10, scale: 2 }).notNull().default('0'),
   rank: integer('rank'),
@@ -132,7 +137,7 @@ export const golfPoolEntries = golfSchema.table('pool_entries', {
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
-export type GolfUser = typeof golfUsers.$inferSelect
+export type GolfUser = typeof users.$inferSelect
 export type GolfTournament = typeof golfTournaments.$inferSelect
 export type GolfGolfer = typeof golfGolfers.$inferSelect
 export type GolfTournamentField = typeof golfTournamentField.$inferSelect

@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { db } from '../_db.js'
 import { verifyAuth } from '../_middleware.js'
 import { createClerkClient } from '@clerk/backend'
-import { golfUsers } from '../../src/lib/db/schema.js'
+import { users } from '../../src/lib/db/schema.js'
 import { eq } from 'drizzle-orm'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -20,10 +20,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const avatarUrl = user.imageUrl || null
 
     await db
-      .insert(golfUsers)
+      .insert(users)
       .values({ id: userId, email, displayName, avatarUrl })
       .onConflictDoUpdate({
-        target: golfUsers.id,
+        target: users.id,
         set: { email, displayName, avatarUrl },
       })
 

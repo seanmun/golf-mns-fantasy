@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { db } from '../_db.js'
-import { golfPools, golfPoolEntries, golfGolfers, golfGolferResults, golfUsers } from '../../src/lib/db/schema.js'
+import { golfPools, golfPoolEntries, golfGolfers, golfGolferResults, users } from '../../src/lib/db/schema.js'
 import { eq, inArray } from 'drizzle-orm'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -25,10 +25,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         totalPoints: golfPoolEntries.totalPoints,
         rank: golfPoolEntries.rank,
         submittedAt: golfPoolEntries.submittedAt,
-        displayName: golfUsers.displayName,
+        displayName: users.displayName,
       })
       .from(golfPoolEntries)
-      .innerJoin(golfUsers, eq(golfPoolEntries.userId, golfUsers.id))
+      .innerJoin(users, eq(golfPoolEntries.userId, users.id))
       .where(eq(golfPoolEntries.poolId, pool.id))
       .orderBy(golfPoolEntries.rank)
 
