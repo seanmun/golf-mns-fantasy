@@ -87,6 +87,14 @@ export const golfTournamentField = golfSchema.table('tournament_field', {
 
 // ─── GOLFER ROUND RESULTS ─────────────────────────────────────────────────────
 
+// Hole-by-hole data per round, stored when the scorecard pass runs
+// (picked golfers only). holes is keyed "1".."18".
+export interface StoredScorecardRound {
+  round: number
+  holes: Record<string, { score: number; par: number }>
+  strokes: number
+}
+
 export const golfGolferResults = golfSchema.table('golfer_results', {
   id: uuid('id').primaryKey().defaultRandom(),
   tournamentId: uuid('tournament_id').notNull().references(() => golfTournaments.id),
@@ -106,6 +114,7 @@ export const golfGolferResults = golfSchema.table('golfer_results', {
   bogeys: integer('bogeys').notNull().default(0),
   doubleBogeys: integer('double_bogeys').notNull().default(0),
   worseThanDouble: integer('worse_than_double').notNull().default(0),
+  scorecards: jsonb('scorecards').$type<StoredScorecardRound[]>(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (t) => [
   index('golf_results_tournament_golfer_idx').on(t.tournamentId, t.golferId),

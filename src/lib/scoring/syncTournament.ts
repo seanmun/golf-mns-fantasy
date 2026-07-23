@@ -141,6 +141,22 @@ export async function syncTournament(
         )
         scorecardCalls++
         const s = statsFromScorecards(rounds)
+        // Persist hole-by-hole for the leaderboard drill-down UI.
+        const stored = rounds
+          .map((r) => {
+            const holes: Record<string, { score: number; par: number }> = {}
+            let strokes = 0
+            for (const [k, h] of Object.entries(r.holes ?? {})) {
+              const score = num(h.holeScore)
+              const par = num(h.par)
+              if (score == null || par == null) continue
+              holes[k] = { score, par }
+              strokes += score
+            }
+            return { round: num(r.roundId) ?? 0, holes, strokes }
+          })
+          .filter((r) => r.round > 0 && Object.keys(r.holes).length > 0)
+          .sort((a, b) => a.round - b.round)
         Object.assign(values, {
           holeInOnes: s.holeInOnes,
           albatrosses: s.albatrosses,
@@ -150,6 +166,7 @@ export async function syncTournament(
           bogeys: s.bogeys,
           doubleBogeys: s.doubleBogeys,
           worseThanDouble: s.worseThanDouble,
+          scorecards: stored,
         })
       } catch (err) {
         console.error(`scorecard failed for ${row.playerId}:`, err)
