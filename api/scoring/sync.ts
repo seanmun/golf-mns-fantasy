@@ -26,7 +26,7 @@ import {
 // - scorecard pass (1 call per PICKED golfer): at most every SCORECARD_THROTTLE
 // Admin force bypasses the leaderboard throttle but still respects the
 // scorecard cadence unless the pass is due.
-const LEADERBOARD_THROTTLE_MS = 2 * 60 * 60 * 1000 // 2h
+const LEADERBOARD_THROTTLE_MS = 8 * 60 * 60 * 1000 // 8h = max 3 pulls/day (Sean, 2026-07-23)
 const SCORECARD_THROTTLE_MS = 20 * 60 * 60 * 1000 // ~daily
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
