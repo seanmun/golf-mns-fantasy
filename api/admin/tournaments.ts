@@ -3,23 +3,19 @@ import { db } from '../_db.js'
 import { verifyAuth, isAdmin } from '../_middleware.js'
 import { golfTournaments } from '../../src/lib/db/schema.js'
 import { eq } from 'drizzle-orm'
+import {
+  sgFetch,
+  ts,
+  type SgScheduleEvent,
+  type SgTournamentInfo,
+} from '../_slashgolf.js'
 
-interface SdTournament {
-  TournamentID: number
-  Name: string
-  StartDate: string
-  EndDate: string
-  Venue: string | null
-  Location: string | null
-  IsOver: boolean
-  Canceled: boolean
-}
-
-// POST { season?: number, externalId?: number }
-// - with externalId: import/refresh that single event
-// - without: import every not-yet-finished event of the season
-// Idempotent — upserts by externalId, never touches status/lastSyncedAt
-// of existing rows (sync owns those).
+// POST { season?: number, tournId?: string }
+// - with tournId: import/refresh that single event (fetches venue too)
+// - without: import every not-yet-finished event of the season from the
+//   SlashGolf schedule. Venue (courses) is only fetched for events we
+//   don't have yet, to conserve the call budget.
+// Idempotent — upserts by externalId; status/lastSyncedAt belong to sync.
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
@@ -27,62 +23,73 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const userId = await verifyAuth(req)
     if (!userId || !isAdmin(userId)) return res.status(403).json({ error: 'Forbidden' })
 
-    const apiKey = process.env.GOLF_API_KEY
-    const baseUrl = process.env.GOLF_API_BASE_URL || 'https://api.sportsdata.io/golf/v2/json'
-    if (!apiKey) return res.status(500).json({ error: 'GOLF_API_KEY not configured' })
-
     const season: number = req.body?.season || new Date().getFullYear()
-    const onlyExternalId: number | undefined = req.body?.externalId
+    const onlyTournId: string | undefined = req.body?.tournId
 
-    const schedRes = await fetch(`${baseUrl}/Tournaments/${season}?key=${apiKey}`)
-    if (!schedRes.ok) {
-      return res.status(502).json({ error: `SportsData Tournaments returned ${schedRes.status}` })
-    }
-    const schedule: SdTournament[] = await schedRes.json()
+    const sched = await sgFetch<{ schedule: SgScheduleEvent[] }>(
+      `schedule?year=${season}&orgId=1`
+    )
 
-    const wanted = schedule.filter((t) => {
-      if (t.Canceled) return false
-      if (onlyExternalId) return t.TournamentID === onlyExternalId
-      return !t.IsOver
+    const now = new Date()
+    const wanted = sched.schedule.filter((t) => {
+      if (onlyTournId) return t.tournId === onlyTournId
+      const end = ts(t.date.end)
+      return end != null && end.getTime() > now.getTime()
     })
-    if (onlyExternalId && wanted.length === 0) {
-      return res.status(404).json({ error: `TournamentID ${onlyExternalId} not found in ${season}` })
+    if (onlyTournId && wanted.length === 0) {
+      return res.status(404).json({ error: `tournId ${onlyTournId} not in ${season} schedule` })
     }
 
     let created = 0
     let updated = 0
+    let venueCalls = 0
 
     for (const t of wanted) {
-      const externalId = String(t.TournamentID)
-      const values = {
-        name: t.Name,
-        course: t.Venue || t.Name,
-        location: t.Location || null,
-        startDate: new Date(t.StartDate),
-        endDate: new Date(t.EndDate),
-        // Rosters lock the morning of round 1. sportsdata StartDate is
-        // midnight (UTC on Vercel) of round-1 day; +11h ≈ 6:00 AM CT,
-        // before the earliest tee time. Admin can adjust per event.
-        lockTime: new Date(new Date(t.StartDate).getTime() + 11 * 60 * 60 * 1000),
+      const start = ts(t.date.start)
+      const end = ts(t.date.end)
+      if (!start || !end) continue
+
+      const [existing] = await db
+        .select({ id: golfTournaments.id, course: golfTournaments.course })
+        .from(golfTournaments)
+        .where(eq(golfTournaments.externalId, t.tournId))
+        .limit(1)
+
+      const base = {
+        name: t.name,
+        startDate: start,
+        endDate: end,
+        // Rosters lock the morning of round 1 (~6:00 AM CT).
+        lockTime: new Date(start.getTime() + 11 * 60 * 60 * 1000),
         season,
       }
 
-      const [existing] = await db
-        .select({ id: golfTournaments.id })
-        .from(golfTournaments)
-        .where(eq(golfTournaments.externalId, externalId))
-        .limit(1)
-
       if (existing) {
-        await db.update(golfTournaments).set(values).where(eq(golfTournaments.id, existing.id))
+        await db.update(golfTournaments).set(base).where(eq(golfTournaments.id, existing.id))
         updated++
       } else {
-        await db.insert(golfTournaments).values({ ...values, externalId })
+        // New event: one tournament-info call for the venue.
+        let course = t.name
+        try {
+          const info = await sgFetch<SgTournamentInfo>(
+            `tournament?orgId=1&tournId=${t.tournId}&year=${season}`
+          )
+          venueCalls++
+          const host = info.courses?.find((c) => c.host === 'Yes') ?? info.courses?.[0]
+          if (host?.courseName) course = host.courseName
+        } catch (err) {
+          console.error(`tournament info failed for ${t.tournId}:`, err)
+        }
+        await db.insert(golfTournaments).values({
+          ...base,
+          course,
+          externalId: t.tournId,
+        })
         created++
       }
     }
 
-    return res.status(200).json({ success: true, season, created, updated })
+    return res.status(200).json({ success: true, source: 'slashgolf', season, created, updated, venueCalls })
   } catch (error) {
     console.error('POST /api/admin/tournaments error:', error)
     return res.status(500).json({ error: 'Internal server error' })

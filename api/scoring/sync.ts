@@ -7,48 +7,27 @@ import {
   golfTournamentField,
   golfGolferResults,
   golfPools,
+  golfPoolEntries,
 } from '../../src/lib/db/schema.js'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, inArray } from 'drizzle-orm'
 import { recalculatePool } from '../../src/lib/scoring/recalculatePool.js'
 import { recomputeSeasonStats } from '../../src/lib/scoring/seasonStats.js'
+import {
+  sgFetch,
+  num,
+  parsePosition,
+  statsFromScorecards,
+  type SgLeaderboard,
+  type SgScorecardRound,
+} from '../_slashgolf.js'
 
-// Minimum gap between real sportsdata pulls per tournament. The
-// leaderboard page fire-and-forgets this endpoint on its 60s refresh;
-// the throttle makes actual API traffic ~1 call / 4 min regardless of
-// how many viewers are watching. Admins (or ?force=1 from an admin) skip
-// the throttle.
-const SYNC_THROTTLE_MS = 4 * 60 * 1000
-
-interface SdRound {
-  Number: number
-  Score: number | null
-}
-
-interface SdPlayer {
-  PlayerID: number
-  Rank: number | null
-  MadeCut: number | boolean
-  IsWithdrawn: boolean
-  HoleInOnes: number
-  DoubleEagles: number
-  Eagles: number
-  Birdies: number
-  Pars: number
-  Bogeys: number
-  DoubleBogeys: number
-  WorseThanDoubleBogey: number
-  TotalScore: number | null
-  Rounds: SdRound[]
-}
-
-interface SdLeaderboard {
-  Tournament: { IsInProgress: boolean; IsOver: boolean }
-  Players: SdPlayer[]
-}
-
-// Trial-tier sportsdata keys scramble numeric fields with decimal noise;
-// rounding restores usable integers (and is a no-op on real data).
-const int = (v: number | null | undefined) => Math.round(Number(v ?? 0))
+// Free-tier budget (250 req/month, 20 scorecards/day):
+// - leaderboard-only sync (1 call): at most every LEADERBOARD_THROTTLE
+// - scorecard pass (1 call per PICKED golfer): at most every SCORECARD_THROTTLE
+// Admin force bypasses the leaderboard throttle but still respects the
+// scorecard cadence unless the pass is due.
+const LEADERBOARD_THROTTLE_MS = 2 * 60 * 60 * 1000 // 2h
+const SCORECARD_THROTTLE_MS = 20 * 60 * 60 * 1000 // ~daily
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST' && req.method !== 'GET') {
@@ -69,58 +48,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .limit(1)
     if (!tournament) return res.status(404).json({ error: 'Tournament not found' })
     if (!tournament.externalId) {
-      return res.status(400).json({ error: 'Tournament has no sportsdata externalId' })
+      return res.status(400).json({ error: 'Tournament has no SlashGolf tournId' })
     }
     if (tournament.status === 'completed' || tournament.status === 'cancelled') {
       return res.status(200).json({ synced: false, reason: `Tournament ${tournament.status}` })
     }
 
-    // Throttle: only admins force through it.
     const force = req.query.force === '1' || req.body?.force === true
     let isAdminCaller = false
     if (force) {
       const userId = await verifyAuth(req)
       isAdminCaller = !!userId && isAdmin(userId)
     }
+    const now = new Date()
     const last = tournament.lastSyncedAt?.getTime() ?? 0
-    if (!(force && isAdminCaller) && Date.now() - last < SYNC_THROTTLE_MS) {
+    if (!(force && isAdminCaller) && now.getTime() - last < LEADERBOARD_THROTTLE_MS) {
       return res.status(200).json({ synced: false, reason: 'Throttled' })
     }
-
-    // Don't bother syncing before the tournament window opens.
-    const now = new Date()
-    if (tournament.status === 'upcoming' && now < tournament.startDate) {
-      // Still allow field population runs on the eve via admin force.
-      if (!(force && isAdminCaller)) {
-        return res.status(200).json({ synced: false, reason: 'Not started yet' })
-      }
+    if (!(force && isAdminCaller) && tournament.status === 'upcoming' && now < tournament.startDate) {
+      return res.status(200).json({ synced: false, reason: 'Not started yet' })
     }
 
-    const apiKey = process.env.GOLF_API_KEY
-    const baseUrl = process.env.GOLF_API_BASE_URL || 'https://api.sportsdata.io/golf/v2/json'
-    if (!apiKey) return res.status(500).json({ error: 'GOLF_API_KEY not configured' })
-
-    const lbRes = await fetch(`${baseUrl}/Leaderboard/${tournament.externalId}?key=${apiKey}`)
-    if (!lbRes.ok) {
-      return res.status(502).json({ error: `SportsData Leaderboard returned ${lbRes.status}` })
+    const year = tournament.season
+    const lb = await sgFetch<SgLeaderboard>(
+      `leaderboard?orgId=1&tournId=${tournament.externalId}&year=${year}`
+    )
+    if (lb.status === 'Not Started' || !lb.leaderboardRows?.length) {
+      await db
+        .update(golfTournaments)
+        .set({ lastSyncedAt: now })
+        .where(eq(golfTournaments.id, tournament.id))
+      return res.status(200).json({ synced: true, reason: 'Tournament not started', results: 0 })
     }
-    const lb: SdLeaderboard = await lbRes.json()
 
-    // Map sportsdata PlayerID -> our golfer row
     const golfers = await db.select().from(golfGolfers)
     const golferByExternal = new Map(
       golfers.filter((g) => g.externalId).map((g) => [g.externalId!, g])
     )
-
-    let resultsUpserted = 0
-    let fieldAdded = 0
-    let unmatched = 0
-
-    // The cut only exists once round 3 has begun (or the event ended);
-    // before that, a falsy MadeCut just means "not decided yet".
-    const cutApplied =
-      lb.Tournament.IsOver ||
-      lb.Players.some((p) => p.Rounds?.some((r) => r.Number >= 3 && r.Score != null))
 
     const existingField = await db
       .select()
@@ -128,20 +92,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .where(eq(golfTournamentField.tournamentId, tournament.id))
     const fieldByGolfer = new Map(existingField.map((f) => [f.golferId, f]))
 
-    for (const p of lb.Players) {
-      const golfer = golferByExternal.get(String(p.PlayerID))
+    // Which golfers are actually picked in pools on this tournament?
+    // Scorecards (stat detail) are fetched only for these.
+    const pools = await db
+      .select()
+      .from(golfPools)
+      .where(eq(golfPools.tournamentId, tournament.id))
+    const pickedGolferIds = new Set<string>()
+    if (pools.length > 0) {
+      const entries = await db
+        .select({ golferIds: golfPoolEntries.golferIds })
+        .from(golfPoolEntries)
+        .where(inArray(golfPoolEntries.poolId, pools.map((p) => p.id)))
+      for (const e of entries) for (const id of e.golferIds as string[]) pickedGolferIds.add(id)
+    }
+
+    const scorecardsDue =
+      now.getTime() - (tournament.lastFullSyncAt?.getTime() ?? 0) >= SCORECARD_THROTTLE_MS
+
+    let resultsUpserted = 0
+    let fieldAdded = 0
+    let unmatched = 0
+    let scorecardCalls = 0
+
+    for (const row of lb.leaderboardRows) {
+      const golfer = golferByExternal.get(String(row.playerId))
       if (!golfer) {
         unmatched++
         continue
       }
 
-      // "Played the weekend" beats the MadeCut flag: it's correct on
-      // real data and immune to trial-tier scrambling of MadeCut.
-      const playedWeekend = p.Rounds?.some((r) => r.Number >= 3 && r.Score != null) ?? false
-      const isCut = cutApplied && !playedWeekend
-      const isWithdrawn = !!p.IsWithdrawn
+      const isCut = row.status === 'cut'
+      const isWithdrawn = row.status === 'wd'
 
-      // Field membership
       const fieldRow = fieldByGolfer.get(golfer.id)
       if (!fieldRow) {
         await db.insert(golfTournamentField).values({
@@ -158,29 +141,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .where(eq(golfTournamentField.id, fieldRow.id))
       }
 
-      // Round scores by round number
-      const roundScore = (n: number): number | null => {
-        const r = p.Rounds?.find((x) => x.Number === n)
-        return r?.Score != null ? int(r.Score) : null
+      // Base values from the leaderboard (positions + round strokes).
+      const roundStrokes = new Map<number, number>()
+      for (const r of row.rounds ?? []) {
+        const n = num(r.roundId)
+        const s = num(r.strokes)
+        if (n != null && s != null) roundStrokes.set(n, s)
       }
 
-      const values = {
-        round1Score: roundScore(1),
-        round2Score: roundScore(2),
-        round3Score: roundScore(3),
-        round4Score: roundScore(4),
-        totalScore: p.TotalScore != null ? int(p.TotalScore) : null,
-        position: p.Rank != null ? int(p.Rank) : null,
+      const values: Record<string, unknown> = {
+        round1Score: roundStrokes.get(1) ?? null,
+        round2Score: roundStrokes.get(2) ?? null,
+        round3Score: roundStrokes.get(3) ?? null,
+        round4Score: roundStrokes.get(4) ?? null,
+        totalScore: row.total === 'E' ? 0 : (num(row.total) ?? null),
+        position: parsePosition(row.position),
         isCut,
-        holeInOnes: int(p.HoleInOnes),
-        albatrosses: int(p.DoubleEagles),
-        eagles: int(p.Eagles),
-        birdies: int(p.Birdies),
-        pars: int(p.Pars),
-        bogeys: int(p.Bogeys),
-        doubleBogeys: int(p.DoubleBogeys),
-        worseThanDouble: int(p.WorseThanDoubleBogey),
-        updatedAt: new Date(),
+        updatedAt: now,
+      }
+
+      // Stat detail from scorecards — picked golfers only, on cadence.
+      if (scorecardsDue && pickedGolferIds.has(golfer.id)) {
+        try {
+          const rounds = await sgFetch<SgScorecardRound[]>(
+            `scorecard?orgId=1&tournId=${tournament.externalId}&year=${year}&playerId=${row.playerId}`
+          )
+          scorecardCalls++
+          const s = statsFromScorecards(rounds)
+          Object.assign(values, {
+            holeInOnes: s.holeInOnes,
+            albatrosses: s.albatrosses,
+            eagles: s.eagles,
+            birdies: s.birdies,
+            pars: s.pars,
+            bogeys: s.bogeys,
+            doubleBogeys: s.doubleBogeys,
+            worseThanDouble: s.worseThanDouble,
+          })
+        } catch (err) {
+          console.error(`scorecard failed for ${row.playerId}:`, err)
+        }
       }
 
       const [existing] = await db
@@ -201,55 +201,53 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           tournamentId: tournament.id,
           golferId: golfer.id,
           ...values,
-        })
+        } as typeof golfGolferResults.$inferInsert)
       }
       resultsUpserted++
     }
 
-    // Lifecycle transitions
+    // Lifecycle. SlashGolf reports "Official" when the event is final.
     let newStatus = tournament.status
-    if (lb.Tournament.IsOver) newStatus = 'completed'
-    else if (lb.Tournament.IsInProgress) newStatus = 'active'
+    if (lb.status === 'Official') newStatus = 'completed'
+    else newStatus = 'active'
 
     await db
       .update(golfTournaments)
-      .set({ status: newStatus, lastSyncedAt: new Date() })
+      .set({
+        status: newStatus,
+        lastSyncedAt: now,
+        ...(scorecardsDue ? { lastFullSyncAt: now } : {}),
+      })
       .where(eq(golfTournaments.id, tournament.id))
-
-    // Pools: lock past lockTime, complete when tournament is over,
-    // and recalculate scores.
-    const pools = await db
-      .select()
-      .from(golfPools)
-      .where(eq(golfPools.tournamentId, tournament.id))
 
     let entriesRecalculated = 0
     for (const pool of pools) {
       let poolStatus = pool.status
       if (poolStatus !== 'cancelled') {
-        if (lb.Tournament.IsOver) poolStatus = 'completed'
+        if (newStatus === 'completed') poolStatus = 'completed'
         else if (now >= tournament.lockTime) poolStatus = 'locked'
       }
       if (poolStatus !== pool.status) {
         await db
           .update(golfPools)
-          .set({ status: poolStatus, updatedAt: new Date() })
+          .set({ status: poolStatus, updatedAt: now })
           .where(eq(golfPools.id, pool.id))
       }
       entriesRecalculated += await recalculatePool(db, pool)
     }
 
-    // Refresh per-golfer season aggregates when an event wraps up.
     if (newStatus === 'completed' && tournament.status !== 'completed') {
       await recomputeSeasonStats(db, tournament.season)
     }
 
     return res.status(200).json({
       synced: true,
+      source: 'slashgolf',
       tournamentStatus: newStatus,
       resultsUpserted,
       fieldAdded,
       unmatchedPlayers: unmatched,
+      scorecardCalls,
       pools: pools.length,
       entriesRecalculated,
     })

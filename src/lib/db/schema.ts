@@ -36,6 +36,9 @@ export const golfTournaments = golfSchema.table('tournaments', {
   season: integer('season').notNull(),
   externalId: text('external_id'),
   lastSyncedAt: timestamp('last_synced_at'),
+  // Last time the stat-detail (scorecard) pass ran, vs the cheaper
+  // leaderboard-only sync tracked by lastSyncedAt.
+  lastFullSyncAt: timestamp('last_full_sync_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 
