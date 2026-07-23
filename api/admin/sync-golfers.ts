@@ -3,6 +3,7 @@ import { db } from '../_db.js'
 import { verifyAuth, isAdmin } from '../_middleware.js'
 import { golfGolfers, golfTournamentField } from '../../src/lib/db/schema.js'
 import { eq, isNull } from 'drizzle-orm'
+import { recomputeSeasonStats } from '../../src/lib/scoring/seasonStats.js'
 
 interface SportsDataPlayer {
   PlayerID: number
@@ -115,12 +116,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       upserted++
     }
 
+    const statsUpdated = await recomputeSeasonStats(db, season)
+
     return res.status(200).json({
       success: true,
       season,
       totalRanked: rankedGolfers.length,
       upserted,
       deletedSeedGolfers: deleted,
+      statsUpdated,
     })
   } catch (error) {
     console.error('POST /api/admin/sync-golfers error:', error)

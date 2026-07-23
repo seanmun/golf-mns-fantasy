@@ -41,6 +41,18 @@ export const golfTournaments = golfSchema.table('tournaments', {
 
 // ─── GOLFERS ──────────────────────────────────────────────────────────────────
 
+export interface GolferSeasonStats {
+  season: number
+  events: number
+  wins: number
+  top10s: number
+  cutsMade: number
+  birdies: number
+  eagles: number
+  fpts: number
+  avgFpts: number
+}
+
 export const golfGolfers = golfSchema.table('golfers', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: text('name').notNull(),
@@ -49,6 +61,8 @@ export const golfGolfers = golfSchema.table('golfers', {
   photoUrl: text('photo_url'),
   externalId: text('external_id').unique(),
   isActive: boolean('is_active').notNull().default(true),
+  // Aggregated from golf.golfer_results by recomputeSeasonStats.
+  seasonStats: jsonb('season_stats').$type<GolferSeasonStats>(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 

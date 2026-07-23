@@ -10,6 +10,7 @@ import {
 } from '../../src/lib/db/schema.js'
 import { eq, and } from 'drizzle-orm'
 import { recalculatePool } from '../../src/lib/scoring/recalculatePool.js'
+import { recomputeSeasonStats } from '../../src/lib/scoring/seasonStats.js'
 
 // Minimum gap between real sportsdata pulls per tournament. The
 // leaderboard page fire-and-forgets this endpoint on its 60s refresh;
@@ -134,8 +135,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         continue
       }
 
-      const madeCut = Number(p.MadeCut) >= 0.5
-      const isCut = cutApplied && !madeCut
+      // "Played the weekend" beats the MadeCut flag: it's correct on
+      // real data and immune to trial-tier scrambling of MadeCut.
+      const playedWeekend = p.Rounds?.some((r) => r.Number >= 3 && r.Score != null) ?? false
+      const isCut = cutApplied && !playedWeekend
       const isWithdrawn = !!p.IsWithdrawn
 
       // Field membership
@@ -234,6 +237,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .where(eq(golfPools.id, pool.id))
       }
       entriesRecalculated += await recalculatePool(db, pool)
+    }
+
+    // Refresh per-golfer season aggregates when an event wraps up.
+    if (newStatus === 'completed' && tournament.status !== 'completed') {
+      await recomputeSeasonStats(db, tournament.season)
     }
 
     return res.status(200).json({

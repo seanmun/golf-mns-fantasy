@@ -246,8 +246,28 @@ export function PoolPick() {
                     </Link>
                     <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
                       {golfer.country || 'Unknown'}{golfer.worldRanking ? ` · #${golfer.worldRanking} WR` : ''}
+                      {golfer.seasonStats ? (
+                        <span className="md:hidden">
+                          {` · ${golfer.seasonStats.avgFpts} avg · ${golfer.seasonStats.top10s} T10`}
+                        </span>
+                      ) : null}
                     </div>
                   </div>
+                  {golfer.seasonStats && (
+                    <div className="hidden md:flex items-center gap-4 flex-shrink-0 font-mono text-xs">
+                      {[
+                        ['AVG FPTS', golfer.seasonStats.avgFpts],
+                        ['T10s', golfer.seasonStats.top10s],
+                        ['CUTS', `${golfer.seasonStats.cutsMade}/${golfer.seasonStats.events}`],
+                        ['WINS', golfer.seasonStats.wins],
+                      ].map(([label, value]) => (
+                        <div key={label as string} className="text-center min-w-[44px]">
+                          <div style={{ color: 'var(--color-text-primary)' }}>{value}</div>
+                          <div className="text-[9px] tracking-wide" style={{ color: 'var(--color-text-muted)' }}>{label}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {isSelected ? (
                     <button
                       onClick={() => toggle(golfer.id)}
