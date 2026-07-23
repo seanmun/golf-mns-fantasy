@@ -1,10 +1,17 @@
 {
   "functions": {
     "api/**/*.ts": {
-      "includeFiles": "api/_*.ts,src/lib/db/schema.ts,src/lib/scoring/engine.ts",
+      "includeFiles": "api/_*.ts,src/lib/db/schema.ts,src/lib/scoring/*.ts",
       "maxDuration": 30
     }
   },
+  "crons": [
+    { "path": "/api/cron/sync-all", "schedule": "0 12 * * *" },
+    { "path": "/api/cron/sync-all", "schedule": "0 15 * * *" },
+    { "path": "/api/cron/sync-all", "schedule": "0 18 * * *" },
+    { "path": "/api/cron/sync-all", "schedule": "0 22 * * *" },
+    { "path": "/api/cron/sync-all", "schedule": "0 3 * * *" }
+  ],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/((?!api).*)", "destination": "/index.html" }

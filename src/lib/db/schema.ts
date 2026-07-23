@@ -39,6 +39,10 @@ export const golfTournaments = golfSchema.table('tournaments', {
   // Last time the stat-detail (scorecard) pass ran, vs the cheaper
   // leaderboard-only sync tracked by lastSyncedAt.
   lastFullSyncAt: timestamp('last_full_sync_at'),
+  // IANA timezone of the venue (from SlashGolf tournament info, e.g.
+  // "America/Chicago"). All day-boundary and sync-window decisions are
+  // made in THIS timezone, never UTC — see api/cron/sync-all.ts.
+  timeZone: text('time_zone'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 
