@@ -23,7 +23,7 @@ const steps = [
   {
     number: 2,
     title: 'Pick 6 Golfers',
-    description: 'Select 6 players from the Masters field before tee-off Thursday. No changes once locked.',
+    description: 'Select your golfers from the field before tee-off Thursday. No changes once locked.',
     Icon: UserPlus,
   },
   {
@@ -75,7 +75,7 @@ export function Landing() {
             transition={{ duration: 0.5, ease: 'easeOut' }}
             className="mb-3 text-xs font-mono uppercase tracking-widest text-neon-green/70"
           >
-            Masters 2026 · April 10–13 · Augusta National
+            PGA Tour 2026 · Weekly tournament pools
           </motion.p>
 
           <motion.h1
@@ -102,7 +102,7 @@ export function Landing() {
             className="mt-5 max-w-xl text-base sm:text-lg leading-relaxed"
             style={{ color: 'var(--color-muted-foreground)' }}
           >
-            Pick 6 golfers from the Masters field. Earn points on every birdie, eagle, and ace.
+            Pick your golfers from the tournament field. Earn points on every birdie, eagle, and ace.
             Compete in private pools with friends. Best roster wins.
           </motion.p>
 

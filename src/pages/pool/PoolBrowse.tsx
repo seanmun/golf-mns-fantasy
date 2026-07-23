@@ -28,7 +28,7 @@ export function PoolBrowse() {
         <div>
           <h1 className="font-display text-4xl" style={{ color: 'var(--color-text-primary)' }}>POOLS</h1>
           <p className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>
-            Open pools for the Masters 2026
+            Open pools for PGA Tour events
           </p>
         </div>
         <Link
@@ -64,7 +64,7 @@ export function PoolBrowse() {
       {pools.length === 0 ? (
         <EmptyState
           title="No pools yet"
-          description="Be the first to create a pool for the Masters."
+          description="Be the first to create a pool for an upcoming event."
           action={
             <Link to="/pools/create" className="px-5 py-2.5 rounded-lg text-sm font-medium"
               style={{ background: 'var(--color-green-primary)', color: '#000' }}>

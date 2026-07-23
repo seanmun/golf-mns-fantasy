@@ -22,7 +22,7 @@ export function Dashboard() {
         <div>
           <h1 className="font-display text-4xl" style={{ color: 'var(--color-text-primary)' }}>MY POOLS</h1>
           <p className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>
-            Your active Masters pools
+            Your active pools
           </p>
         </div>
         <Link
@@ -37,7 +37,7 @@ export function Dashboard() {
       {pools.length === 0 ? (
         <EmptyState
           title="No pools yet"
-          description="Join an existing pool or create your own for the Masters."
+          description="Join an existing pool or create your own for any PGA Tour event."
           action={
             <Link
               to="/pools"

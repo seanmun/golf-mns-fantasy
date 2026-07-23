@@ -6,7 +6,7 @@ export function Footer() {
           <span className="font-display text-[var(--color-foreground)]">
             MNS<span className="text-neon-green">golf</span>
           </span>
-          {' '}&mdash; Masters 2026 · April 10–13
+          {' '}&mdash; PGA Tour 2026
         </p>
         <nav className="flex flex-wrap items-center justify-center gap-1 text-xs text-[var(--color-muted-foreground)] mb-4">
           <a href="https://mnsfantasy.com" className="hover:text-[var(--color-foreground)] transition-colors">
