@@ -64,3 +64,29 @@ export function calculateGolferPoints(stats: GolferStats, config: ScoringConfig)
 export function calculateEntryPoints(golferStatsList: GolferStats[], config: ScoringConfig): number {
   return golferStatsList.reduce((total, stats) => total + calculateGolferPoints(stats, config), 0)
 }
+
+// Hole-scoring points for one round from stored hole data. Excludes
+// tournament-level bonuses (made-cut, position) by design — those only
+// exist at tournament scope, so per-round columns sum to total minus
+// bonuses. An ace counts as hole-in-one only (mirrors statsFromScorecards).
+export function pointsFromHoles(
+  holes: Array<{ score: number; par: number }>,
+  config: ScoringConfig
+): number {
+  let pts = 0
+  for (const h of holes) {
+    if (h.score === 1) {
+      pts += config.hole_in_one
+      continue
+    }
+    const diff = h.score - h.par
+    if (diff <= -3) pts += config.albatross
+    else if (diff === -2) pts += config.eagle
+    else if (diff === -1) pts += config.birdie
+    else if (diff === 0) pts += config.par
+    else if (diff === 1) pts += config.bogey
+    else if (diff === 2) pts += config.double_bogey
+    else pts += config.worse_than_double
+  }
+  return Math.round(pts * 100) / 100
+}

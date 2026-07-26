@@ -53,12 +53,14 @@ export async function syncTournament(
   const lb = await sgFetch<SgLeaderboard>(
     `leaderboard?orgId=1&tournId=${tournament.externalId}&year=${year}`
   )
-  if (lb.status === 'Not Started' || !lb.leaderboardRows?.length) {
+  // Pre-event the leaderboard may already carry the field + tee times
+  // with status "Not Started" — process rows whenever they exist.
+  if (!lb.leaderboardRows?.length) {
     await db
       .update(golfTournaments)
       .set({ lastSyncedAt: now })
       .where(eq(golfTournaments.id, tournament.id))
-    return { synced: true, reason: 'Tournament not started', resultsUpserted: 0 }
+    return { synced: true, reason: 'No leaderboard rows yet', resultsUpserted: 0 }
   }
 
   const golfers = await db.select().from(golfGolfers)
@@ -99,6 +101,7 @@ export async function syncTournament(
 
     const isCut = row.status === 'cut'
     const isWithdrawn = row.status === 'wd'
+    const teeTime = row.teeTime ?? null
 
     const fieldRow = fieldByGolfer.get(golfer.id)
     if (!fieldRow) {
@@ -107,14 +110,22 @@ export async function syncTournament(
         golferId: golfer.id,
         isCut,
         isWithdrawn,
+        teeTime,
       })
       fieldAdded++
-    } else if (fieldRow.isCut !== isCut || fieldRow.isWithdrawn !== isWithdrawn) {
+    } else if (
+      fieldRow.isCut !== isCut ||
+      fieldRow.isWithdrawn !== isWithdrawn ||
+      fieldRow.teeTime !== teeTime
+    ) {
       await db
         .update(golfTournamentField)
-        .set({ isCut, isWithdrawn })
+        .set({ isCut, isWithdrawn, teeTime })
         .where(eq(golfTournamentField.id, fieldRow.id))
     }
+
+    // Pre-event (field/tee-time discovery): no scores to record yet.
+    if (lb.status === 'Not Started') continue
 
     const roundStrokes = new Map<number, number>()
     for (const r of row.rounds ?? []) {
@@ -198,7 +209,7 @@ export async function syncTournament(
 
   let newStatus = tournament.status
   if (lb.status === 'Official') newStatus = 'completed'
-  else newStatus = 'active'
+  else if (lb.status !== 'Not Started') newStatus = 'active'
 
   await db
     .update(golfTournaments)

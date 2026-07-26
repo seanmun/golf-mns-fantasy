@@ -58,6 +58,7 @@ export interface SgLeaderboardRow {
   status: 'complete' | 'cut' | 'wd' | string
   total: string
   position: string // "1" | "T4" | "CUT"
+  teeTime?: string // e.g. "2:20pm"
   rounds: Array<{ roundId: unknown; strokes: unknown; scoreToPar: string }>
 }
 

@@ -7,9 +7,22 @@ import { ScoreBadge } from '@/components/shared/ScoreBadge'
 import { ChevronLeft } from 'lucide-react'
 import {
   calculateGolferPoints,
+  pointsFromHoles,
   DEFAULT_SCORING,
   type ScoringConfig,
 } from '@/lib/scoring/engine'
+
+// Team fantasy points per round, summed from stored hole-by-hole data.
+function roundPoints(entry: any, config: ScoringConfig): Record<number, number> {
+  const totals: Record<number, number> = {}
+  for (const { results } of entry.golfers ?? []) {
+    for (const r of results?.scorecards ?? []) {
+      const pts = pointsFromHoles(Object.values(r.holes ?? {}), config)
+      totals[r.round] = Math.round(((totals[r.round] ?? 0) + pts) * 100) / 100
+    }
+  }
+  return totals
+}
 
 function golferPoints(results: any, config: ScoringConfig): number {
   return calculateGolferPoints(
@@ -153,6 +166,26 @@ export function PoolLeaderboard() {
                     {Number(entry.totalPoints).toFixed(0)} pts
                   </span>
                 </div>
+
+                {/* Per-round team fantasy points (hole scoring; total also
+                    includes cut/position bonuses) */}
+                {(() => {
+                  const rp = roundPoints(entry, pool?.scoringConfig ?? DEFAULT_SCORING)
+                  const roundsPresent = [1, 2, 3, 4].filter((r) => rp[r] !== undefined)
+                  if (roundsPresent.length === 0) return null
+                  return (
+                    <div className="flex gap-2 mb-3">
+                      {[1, 2, 3, 4].map((r) => (
+                        <div key={r} className="flex-1 text-center py-1.5 rounded-lg" style={{ background: 'var(--color-surface-2)' }}>
+                          <div className="text-[9px] uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>Rd {r}</div>
+                          <div className="text-sm font-mono font-bold" style={{ color: rp[r] !== undefined ? 'var(--color-text-primary)' : 'var(--color-text-muted)' }}>
+                            {rp[r] !== undefined ? rp[r] : '—'}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })()}
 
                 {/* Golfer breakdown — tap a golfer for hole-by-hole */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">

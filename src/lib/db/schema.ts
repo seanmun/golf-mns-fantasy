@@ -81,6 +81,9 @@ export const golfTournamentField = golfSchema.table('tournament_field', {
   golferId: uuid('golfer_id').notNull().references(() => golfGolfers.id),
   isCut: boolean('is_cut').notNull().default(false),
   isWithdrawn: boolean('is_withdrawn').notNull().default(false),
+  // Latest tee time string from the leaderboard (e.g. "2:20pm"),
+  // refreshed each sync — pre-event it's the round-1 tee time.
+  teeTime: text('tee_time'),
 }, (t) => [
   index('golf_field_tournament_idx').on(t.tournamentId),
 ])

@@ -53,9 +53,19 @@ export function PoolPick() {
   const pool = poolData?.pool
   const allGolfers = golfersData?.golfers || []
   const golferMap = Object.fromEntries(allGolfers.map((g: any) => [g.id, g]))
-  const fieldIds = new Set((fieldData?.golfers || []).map((g: any) => g.id))
+  const fieldGolfers = fieldData?.golfers || []
+  const fieldIds = new Set(fieldGolfers.map((g: any) => g.id))
+  const teeTimeById = Object.fromEntries(
+    fieldGolfers.filter((g: any) => g.teeTime).map((g: any) => [g.id, g.teeTime])
+  )
+  const fieldKnown = fieldIds.size > 0
 
-  const filteredGolfers = allGolfers.filter((g: any) =>
+  // When the field is announced, only offer golfers who are playing.
+  const pickableGolfers = fieldKnown
+    ? allGolfers.filter((g: any) => fieldIds.has(g.id) || selected.includes(g.id))
+    : allGolfers
+
+  const filteredGolfers = pickableGolfers.filter((g: any) =>
     !search || g.name.toLowerCase().includes(search.toLowerCase())
   )
 
@@ -214,6 +224,12 @@ export function PoolPick() {
             style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
           />
 
+          {!fieldKnown && (
+            <div className="mb-4 px-3 py-2 rounded-lg text-xs" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-score-bogey)', color: 'var(--color-score-bogey)' }}>
+              The field for this event hasn't been announced yet — all golfers are shown, including some who won't play. Check back closer to tee-off; entries lock at the deadline regardless.
+            </div>
+          )}
+
           {rosterFull && (
             <div className="mb-4 px-3 py-2 rounded-lg text-xs" style={{ background: 'var(--color-green-dim)', color: 'var(--color-green-primary)' }}>
               Roster full — drop a player from your roster to pick someone new
@@ -246,6 +262,7 @@ export function PoolPick() {
                     </Link>
                     <div className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
                       {golfer.country || 'Unknown'}{golfer.worldRanking ? ` · #${golfer.worldRanking} WR` : ''}
+                      {teeTimeById[golfer.id] ? ` · ⛳ ${teeTimeById[golfer.id]}` : ''}
                       {golfer.seasonStats ? (
                         <span className="md:hidden">
                           {` · ${golfer.seasonStats.avgFpts} avg · ${golfer.seasonStats.top10s} T10`}

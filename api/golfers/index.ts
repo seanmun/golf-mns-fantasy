@@ -20,6 +20,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           photoUrl: golfGolfers.photoUrl,
           isCut: golfTournamentField.isCut,
           isWithdrawn: golfTournamentField.isWithdrawn,
+          teeTime: golfTournamentField.teeTime,
+          seasonStats: golfGolfers.seasonStats,
         })
         .from(golfTournamentField)
         .innerJoin(golfGolfers, eq(golfTournamentField.golferId, golfGolfers.id))

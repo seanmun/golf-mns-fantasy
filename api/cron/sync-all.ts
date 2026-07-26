@@ -58,8 +58,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const report: Array<Record<string, unknown>> = []
 
     for (const t of candidates) {
-      // Only touch events whose window [start, end + 1 day] contains now.
-      const windowStart = t.startDate.getTime()
+      // Window opens 4 days early for field/tee-time discovery (the
+      // SlashGolf leaderboard 400s until the entry list exists — that's
+      // handled as a per-tournament soft failure below).
+      const windowStart = t.startDate.getTime() - 4 * 24 * 60 * 60 * 1000
       const windowEnd = t.endDate.getTime() + 24 * 60 * 60 * 1000
       if (now.getTime() < windowStart || now.getTime() > windowEnd) continue
       if (!t.externalId) continue
@@ -101,8 +103,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       const withScorecards = win === 'post'
-      const result = await syncTournament(db, t, { withScorecards })
-      report.push({ tournament: t.name, window: win, withScorecards, ...result })
+      try {
+        const result = await syncTournament(db, t, { withScorecards })
+        report.push({ tournament: t.name, window: win, withScorecards, ...result })
+      } catch (err) {
+        // Pre-event 400s (no entry list yet) and transient failures must
+        // not break the other tournaments' syncs.
+        report.push({
+          tournament: t.name,
+          window: win,
+          failed: err instanceof Error ? err.message : String(err),
+        })
+      }
     }
 
     return res.status(200).json({ ranAt: now.toISOString(), tournaments: report })
