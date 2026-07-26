@@ -94,6 +94,7 @@ export function PoolLeaderboard() {
   const { poolId } = useParams<{ poolId: string }>()
   const { user } = useUser()
   const [openGolfer, setOpenGolfer] = useState<string | null>(null)
+  const [openEntry, setOpenEntry] = useState<string | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['leaderboard', poolId],
@@ -187,7 +188,21 @@ export function PoolLeaderboard() {
                   )
                 })()}
 
+                {/* Players dropdown */}
+                <button
+                  onClick={() => setOpenEntry(openEntry === entry.id ? null : entry.id)}
+                  className="w-full py-1.5 rounded-lg text-xs font-medium mb-2 transition-colors"
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid var(--color-border)',
+                    color: 'var(--color-text-secondary)',
+                  }}
+                >
+                  {openEntry === entry.id ? 'Hide players ▴' : 'View players ▾'}
+                </button>
+
                 {/* Golfer breakdown — tap a golfer for hole-by-hole */}
+                {openEntry === entry.id && (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {entry.golfers.map(({ golfer, results }: any) => {
                     const key = `${entry.id}:${golfer?.id}`
@@ -225,6 +240,7 @@ export function PoolLeaderboard() {
                     )
                   })}
                 </div>
+                )}
               </div>
             )
           })}
