@@ -50,6 +50,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const now = new Date()
+    // Ops levers (same CRON_SECRET auth): limit to one tournament and/or
+    // bypass the date/local-window gates to settle an event on demand.
+    const onlyTournamentId = req.query.tournamentId as string | undefined
+    const force = req.query.force === '1'
+
     const candidates = await db
       .select()
       .from(golfTournaments)
@@ -58,12 +63,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const report: Array<Record<string, unknown>> = []
 
     for (const t of candidates) {
+      if (onlyTournamentId && t.id !== onlyTournamentId) continue
       // Window opens 4 days early for field/tee-time discovery (the
       // SlashGolf leaderboard 400s until the entry list exists — that's
-      // handled as a per-tournament soft failure below).
+      // handled as a per-tournament soft failure below) and stays open 4
+      // days past the end date: an event is only dropped once it reports
+      // Official, which can land well after the final putt.
       const windowStart = t.startDate.getTime() - 4 * 24 * 60 * 60 * 1000
-      const windowEnd = t.endDate.getTime() + 24 * 60 * 60 * 1000
-      if (now.getTime() < windowStart || now.getTime() > windowEnd) continue
+      const windowEnd = t.endDate.getTime() + 4 * 24 * 60 * 60 * 1000
+      if (!force && (now.getTime() < windowStart || now.getTime() > windowEnd)) continue
       if (!t.externalId) continue
 
       // Ensure we know the venue timezone (one-time fetch, then stored).
@@ -87,14 +95,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const local = localParts(now, timeZone)
       const win = windowOf(local.hour)
-      if (!win) {
+      if (!win && !force) {
         report.push({ tournament: t.name, skipped: `outside windows (local ${local.hour}:00)` })
         continue
       }
 
       // One sync per window per LOCAL day: if the last sync fell in the
       // same local day + window, skip.
-      if (t.lastSyncedAt) {
+      if (t.lastSyncedAt && !force) {
         const lastLocal = localParts(t.lastSyncedAt, timeZone)
         if (lastLocal.day === local.day && windowOf(lastLocal.hour) === win) {
           report.push({ tournament: t.name, skipped: `already synced ${win} window` })
@@ -102,7 +110,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       }
 
-      const withScorecards = win === 'post'
+      // Forced runs always take the full pass (scorecards included) —
+      // that's the point of settling an event by hand.
+      const withScorecards = force || win === 'post'
       try {
         const result = await syncTournament(db, t, { withScorecards })
         report.push({ tournament: t.name, window: win, withScorecards, ...result })
