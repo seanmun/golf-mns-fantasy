@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { db } from '../_db.js'
-import { golfPools, golfPoolEntries, golfGolfers, golfGolferResults, users } from '../../src/lib/db/schema.js'
+import { golfPools, golfPoolEntries, golfGolfers, golfGolferResults, golfTournaments, users } from '../../src/lib/db/schema.js'
 import { eq, inArray } from 'drizzle-orm'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -55,7 +55,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       })),
     }))
 
-    return res.status(200).json({ leaderboard, pool })
+    const [tournament] = await db
+      .select({
+        name: golfTournaments.name,
+        status: golfTournaments.status,
+        timeZone: golfTournaments.timeZone,
+        lastSyncedAt: golfTournaments.lastSyncedAt,
+      })
+      .from(golfTournaments)
+      .where(eq(golfTournaments.id, pool.tournamentId))
+      .limit(1)
+
+    return res.status(200).json({ leaderboard, pool, tournament })
   } catch (error) {
     console.error('GET /api/pools/leaderboard error:', error)
     return res.status(500).json({ error: 'Internal server error' })

@@ -12,6 +12,42 @@ import {
   type ScoringConfig,
 } from '@/lib/scoring/engine'
 
+// Scores refresh in three daily windows at the venue's local time
+// (see api/cron/sync-all.ts). Report the last pull and the next window.
+const SYNC_WINDOWS = [
+  { startHour: 10, label: 'midday' },
+  { startHour: 14, label: 'late afternoon' },
+  { startHour: 19, label: 'after play' },
+]
+
+function syncStatusLine(tournament: any): string | null {
+  if (!tournament?.lastSyncedAt) return null
+  const tz = tournament.timeZone || 'America/New_York'
+  const fmt = (d: Date) =>
+    d.toLocaleTimeString('en-US', {
+      timeZone: tz,
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZoneName: 'short',
+    })
+
+  const last = new Date(tournament.lastSyncedAt)
+  const lastText = `Scores updated ${fmt(last)}`
+
+  if (tournament.status === 'completed') return `${lastText} · final`
+
+  const localHour = Number(
+    new Intl.DateTimeFormat('en-US', { timeZone: tz, hour12: false, hour: '2-digit' }).format(
+      new Date()
+    )
+  ) % 24
+  const next = SYNC_WINDOWS.find((w) => localHour < w.startHour)
+  const nextText = next
+    ? `next update after ${next.startHour > 12 ? next.startHour - 12 : next.startHour}${next.startHour >= 12 ? 'pm' : 'am'} (${next.label})`
+    : 'next update midday tomorrow'
+  return `${lastText} · ${nextText}`
+}
+
 // Team fantasy points per round, summed from stored hole-by-hole data.
 function roundPoints(entry: any, config: ScoringConfig): Record<number, number> {
   const totals: Record<number, number> = {}
@@ -119,7 +155,8 @@ export function PoolLeaderboard() {
 
   if (isLoading) return <LoadingSpinner />
 
-  const { leaderboard = [], pool } = data || {}
+  const { leaderboard = [], pool, tournament } = data || {}
+  const syncLine = syncStatusLine(tournament)
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-12">
@@ -245,6 +282,12 @@ export function PoolLeaderboard() {
             )
           })}
         </div>
+      )}
+
+      {syncLine && (
+        <p className="mt-6 text-center text-xs" style={{ color: 'var(--color-text-muted)' }}>
+          {syncLine}
+        </p>
       )}
     </div>
   )
