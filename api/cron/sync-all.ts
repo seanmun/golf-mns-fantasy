@@ -6,17 +6,23 @@ import { eq } from 'drizzle-orm'
 import { syncTournament } from '../../src/lib/scoring/syncTournament.js'
 import { sgFetch, type SgTournamentInfo } from '../_slashgolf.js'
 
-// Automated sync floor. vercel.json fires this at several fixed UTC
-// times daily (Hobby-compatible: each cron entry runs once per day).
-// This endpoint converts "now" into each tournament's LOCAL time and
-// syncs only when the tick lands in one of three local windows:
-//   midday [10:00–14:00)  · late [14:00–19:00) · post-play [19:00–24:00)
-// Max one sync per window per local day => max 3/day per tournament.
-// The scorecard stat-pass runs only in the post-play window (or when
-// the event is final), i.e. after play ends AT THE COURSE — day
-// boundaries are never computed in UTC.
+// Automated sync. vercel.json fires this once per UTC hour (24 separate
+// once-daily entries, which is the form Vercel Hobby accepts). This
+// endpoint converts "now" into each tournament's LOCAL time and syncs
+// hourly while play is plausible at the venue — day boundaries are
+// never computed in UTC. Every sync includes the scorecard pass, so
+// fantasy points move hourly, not just positions.
+//
+// Budget (verified 2026-08-01): scorecards and requests are SEPARATE
+// RapidAPI buckets — scorecard calls don't touch the 2,000/month request
+// quota, which has its own 2,000/day. Hourly costs ~1 request/hour plus
+// one scorecard per picked golfer.
 
-type Window = 'midday' | 'late' | 'post'
+const PLAY_START_HOUR = 6 // venue-local
+const PLAY_END_HOUR = 23 // inclusive
+// Guard against double-firing within an hour (Vercel Hobby cron
+// precision is ±59 min, so ticks can land close together).
+const MIN_GAP_MS = 45 * 60 * 1000
 
 function localParts(d: Date, timeZone: string): { hour: number; day: string } {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -32,13 +38,6 @@ function localParts(d: Date, timeZone: string): { hour: number; day: string } {
     hour: Number(get('hour')) % 24,
     day: `${get('year')}-${get('month')}-${get('day')}`,
   }
-}
-
-function windowOf(hour: number): Window | null {
-  if (hour >= 10 && hour < 14) return 'midday'
-  if (hour >= 14 && hour < 19) return 'late'
-  if (hour >= 19) return 'post'
-  return null
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -94,34 +93,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       const local = localParts(now, timeZone)
-      const win = windowOf(local.hour)
-      if (!win && !force) {
-        report.push({ tournament: t.name, skipped: `outside windows (local ${local.hour}:00)` })
+      if (!force && (local.hour < PLAY_START_HOUR || local.hour > PLAY_END_HOUR)) {
+        report.push({ tournament: t.name, skipped: `outside play hours (local ${local.hour}:00)` })
         continue
       }
 
-      // One sync per window per LOCAL day: if the last sync fell in the
-      // same local day + window, skip.
-      if (t.lastSyncedAt && !force) {
-        const lastLocal = localParts(t.lastSyncedAt, timeZone)
-        if (lastLocal.day === local.day && windowOf(lastLocal.hour) === win) {
-          report.push({ tournament: t.name, skipped: `already synced ${win} window` })
-          continue
-        }
+      if (t.lastSyncedAt && !force && now.getTime() - t.lastSyncedAt.getTime() < MIN_GAP_MS) {
+        report.push({ tournament: t.name, skipped: 'synced within the last hour' })
+        continue
       }
 
-      // Forced runs always take the full pass (scorecards included) —
-      // that's the point of settling an event by hand.
-      const withScorecards = force || win === 'post'
       try {
-        const result = await syncTournament(db, t, { withScorecards })
-        report.push({ tournament: t.name, window: win, withScorecards, ...result })
+        const result = await syncTournament(db, t, { withScorecards: true })
+        report.push({ tournament: t.name, localHour: local.hour, ...result })
       } catch (err) {
         // Pre-event 400s (no entry list yet) and transient failures must
         // not break the other tournaments' syncs.
         report.push({
           tournament: t.name,
-          window: win,
+          localHour: local.hour,
           failed: err instanceof Error ? err.message : String(err),
         })
       }
