@@ -12,27 +12,18 @@ import {
   type ScoringConfig,
 } from '@/lib/scoring/engine'
 
-// Scores refresh in three daily windows at the venue's local time
-// (see api/cron/sync-all.ts). Report the last pull and the next window.
-const SYNC_WINDOWS = [
-  { startHour: 10, label: 'midday' },
-  { startHour: 14, label: 'late afternoon' },
-  { startHour: 19, label: 'after play' },
-]
-
+// Scores refresh hourly while play is under way at the venue
+// (6am–11pm local, see api/cron/sync-all.ts).
 function syncStatusLine(tournament: any): string | null {
   if (!tournament?.lastSyncedAt) return null
   const tz = tournament.timeZone || 'America/New_York'
-  const fmt = (d: Date) =>
-    d.toLocaleTimeString('en-US', {
-      timeZone: tz,
-      hour: 'numeric',
-      minute: '2-digit',
-      timeZoneName: 'short',
-    })
-
-  const last = new Date(tournament.lastSyncedAt)
-  const lastText = `Scores updated ${fmt(last)}`
+  const last = new Date(tournament.lastSyncedAt).toLocaleTimeString('en-US', {
+    timeZone: tz,
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  })
+  const lastText = `Scores updated ${last}`
 
   if (tournament.status === 'completed') return `${lastText} · final`
 
@@ -41,11 +32,9 @@ function syncStatusLine(tournament: any): string | null {
       new Date()
     )
   ) % 24
-  const next = SYNC_WINDOWS.find((w) => localHour < w.startHour)
-  const nextText = next
-    ? `next update after ${next.startHour > 12 ? next.startHour - 12 : next.startHour}${next.startHour >= 12 ? 'pm' : 'am'} (${next.label})`
-    : 'next update midday tomorrow'
-  return `${lastText} · ${nextText}`
+  return localHour >= 6 && localHour <= 23
+    ? `${lastText} · updates hourly during play`
+    : `${lastText} · next update after 6am at the course`
 }
 
 // Team fantasy points per round, summed from stored hole-by-hole data.
