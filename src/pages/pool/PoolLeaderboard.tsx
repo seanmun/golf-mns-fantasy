@@ -37,6 +37,78 @@ function syncStatusLine(tournament: any): string | null {
     : `${lastText} · next update after 6am at the course`
 }
 
+// Per-pool scoring key. Reads the pool's own config so custom scoring
+// stays accurate.
+function ScoringLegend({ config }: { config: ScoringConfig }) {
+  const sign = (n: number) => (n > 0 ? `+${n}` : `${n}`)
+  const holes: Array<[string, number]> = [
+    ['Ace', config.hole_in_one],
+    ['Albatross', config.albatross],
+    ['Eagle', config.eagle],
+    ['Birdie', config.birdie],
+    ['Par', config.par],
+    ['Bogey', config.bogey],
+    ['Double', config.double_bogey],
+    ['Worse', config.worse_than_double],
+  ]
+  const podium = Object.entries(config.position_bonuses ?? {})
+    .map(([pos, pts]) => [Number(pos), Number(pts)] as [number, number])
+    .sort((a, b) => a[0] - b[0])
+
+  return (
+    <details className="mb-4 rounded-lg border" style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}>
+      <summary className="cursor-pointer px-4 py-2 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-secondary)' }}>
+        Scoring
+      </summary>
+      <div className="px-4 pb-3 pt-1">
+        <div className="flex flex-wrap gap-x-3 gap-y-1">
+          {holes.map(([label, pts]) => (
+            <span key={label} className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+              {label}{' '}
+              <span
+                className="font-mono"
+                style={{
+                  color:
+                    pts > 0
+                      ? 'var(--color-green-primary)'
+                      : pts < 0
+                        ? 'var(--color-score-bogey)'
+                        : 'var(--color-text-secondary)',
+                }}
+              >
+                {sign(pts)}
+              </span>
+            </span>
+          ))}
+        </div>
+        <p className="mt-2 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+          Made cut{' '}
+          <span className="font-mono" style={{ color: 'var(--color-green-primary)' }}>
+            {sign(config.made_cut_bonus)}
+          </span>
+          {podium.length > 0 && (
+            <>
+              {' · Finish '}
+              {podium.map(([pos, pts], i) => (
+                <span key={pos}>
+                  {i > 0 && ', '}
+                  {pos === 1 ? 'win' : `${pos}${pos === 2 ? 'nd' : pos === 3 ? 'rd' : 'th'}`}{' '}
+                  <span className="font-mono" style={{ color: 'var(--color-green-primary)' }}>
+                    {sign(pts)}
+                  </span>
+                </span>
+              ))}
+            </>
+          )}
+        </p>
+        <p className="mt-1.5 text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+          Every golfer on your team scores; round columns show hole points only, the total adds cut and finish bonuses.
+        </p>
+      </div>
+    </details>
+  )
+}
+
 // Team fantasy points per round, summed from stored hole-by-hole data.
 function roundPoints(entry: any, config: ScoringConfig): Record<number, number> {
   const totals: Record<number, number> = {}
@@ -163,6 +235,8 @@ export function PoolLeaderboard() {
           </p>
         )}
       </div>
+
+      <ScoringLegend config={pool?.scoringConfig ?? DEFAULT_SCORING} />
 
       {leaderboard.length === 0 ? (
         <p style={{ color: 'var(--color-text-muted)' }}>No entries yet.</p>
