@@ -176,6 +176,53 @@ function holeColor(score: number, par: number) {
   return SCORE_STYLE[kindOf(score, par)]
 }
 
+// Every point a golfer earned, attributed: hole scoring per round, plus
+// the tournament-level bonuses (made cut, finish position).
+function PointsBreakdown({ results, config }: { results: any; config: ScoringConfig }) {
+  const rounds: Array<{ round: number; holes: Record<string, { score: number; par: number }> }> =
+    results?.scorecards ?? []
+  const perRound = rounds.map((r) => ({
+    round: r.round,
+    pts: pointsFromHoles(Object.values(r.holes ?? {}), config),
+  }))
+  const holeTotal = perRound.reduce((s, r) => s + r.pts, 0)
+  const cutBonus = results && !results.isCut ? config.made_cut_bonus : 0
+  const finishBonus =
+    results?.position != null ? (config.position_bonuses?.[String(results.position)] ?? 0) : 0
+  const total = Math.round((holeTotal + cutBonus + finishBonus) * 100) / 100
+  const sign = (n: number) => (n > 0 ? `+${n}` : `${n}`)
+
+  const rows: Array<[string, number]> = [
+    ...perRound.map((r) => [`Round ${r.round}`, r.pts] as [string, number]),
+    ...(cutBonus ? ([['Made cut', cutBonus]] as Array<[string, number]>) : []),
+    ...(finishBonus
+      ? ([[`Finished ${results.position === 1 ? '1st' : `${results.position}`}`, finishBonus]] as Array<[string, number]>)
+      : []),
+  ]
+
+  if (rows.length === 0) return null
+
+  return (
+    <div className="mt-2 rounded-lg p-3" style={{ background: 'var(--color-surface)' }}>
+      <div className="text-[10px] font-bold uppercase tracking-wide mb-1.5" style={{ color: 'var(--color-text-muted)' }}>
+        Points
+      </div>
+      <div className="space-y-0.5">
+        {rows.map(([label, pts]) => (
+          <div key={label} className="flex justify-between text-xs">
+            <span style={{ color: 'var(--color-text-secondary)' }}>{label}</span>
+            <span className="font-mono" style={{ color: 'var(--color-text-primary)' }}>{sign(pts)}</span>
+          </div>
+        ))}
+        <div className="flex justify-between text-xs pt-1 mt-1" style={{ borderTop: '1px solid var(--color-border)' }}>
+          <span className="font-semibold" style={{ color: 'var(--color-text-primary)' }}>Total</span>
+          <span className="font-mono font-bold" style={{ color: 'var(--color-green-primary)' }}>{total}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ScorecardPanel({ scorecards }: { scorecards: Array<{ round: number; holes: Record<string, { score: number; par: number }>; strokes: number }> }) {
   return (
     <div className="mt-2 space-y-2">
@@ -355,13 +402,19 @@ export function PoolLeaderboard() {
                           )}
                         </button>
                         {isOpen && (
-                          hasHoles ? (
-                            <ScorecardPanel scorecards={results.scorecards} />
-                          ) : (
-                            <p className="mt-2 px-3 py-2 rounded-lg text-[11px]" style={{ background: 'var(--color-surface)', color: 'var(--color-text-muted)' }}>
-                              Hole-by-hole appears after tonight's stats sync.
-                            </p>
-                          )
+                          <>
+                            <PointsBreakdown
+                              results={results}
+                              config={pool?.scoringConfig ?? DEFAULT_SCORING}
+                            />
+                            {hasHoles ? (
+                              <ScorecardPanel scorecards={results.scorecards} />
+                            ) : (
+                              <p className="mt-2 px-3 py-2 rounded-lg text-[11px]" style={{ background: 'var(--color-surface)', color: 'var(--color-text-muted)' }}>
+                                Hole-by-hole appears after the next stats sync.
+                              </p>
+                            )}
+                          </>
                         )}
                       </div>
                     )
