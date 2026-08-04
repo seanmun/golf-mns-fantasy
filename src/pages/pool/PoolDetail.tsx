@@ -100,15 +100,26 @@ export function PoolDetail() {
 
       {/* Actions */}
       <div className="flex flex-wrap gap-3 mb-10">
-        {!isLocked && (
+        {pool.pickMode === 'draft' ? (
           <Link
-            to={`/pools/${poolId}/pick`}
+            to={`/pools/${poolId}/draft`}
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium text-sm"
             style={{ background: 'var(--color-green-primary)', color: '#000' }}
           >
-            {hasPicks ? 'Edit Picks' : 'Make Picks'}
+            {pool.draftId ? 'Draft Room' : 'Set Up Draft'}
             <ChevronRight size={14} />
           </Link>
+        ) : (
+          !isLocked && (
+            <Link
+              to={`/pools/${poolId}/pick`}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium text-sm"
+              style={{ background: 'var(--color-green-primary)', color: '#000' }}
+            >
+              {hasPicks ? 'Edit Picks' : 'Make Picks'}
+              <ChevronRight size={14} />
+            </Link>
+          )
         )}
         <Link
           to={`/pools/${poolId}/leaderboard`}

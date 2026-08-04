@@ -1,0 +1,184 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { and, eq } from 'drizzle-orm'
+import { db } from '../_db.js'
+import { verifyAuth } from '../_middleware.js'
+import {
+  golfPools,
+  golfPoolEntries,
+  golfTournaments,
+  golfTournamentField,
+  golfGolfers,
+  users,
+} from '../../src/lib/db/schema.js'
+import { createDraft, controlDraft, getDraftState } from '../_draftService.js'
+
+// POST /api/pools/draft { poolId, action }
+//   create — build the draft in the hub from this pool's entries and the
+//            tournament field, then store its id on the pool
+//   refresh_field — replace the item pool from the latest field
+//   start / pause / resume
+//   sync   — pull completed picks back into pool entries
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+
+  const userId = await verifyAuth(req)
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' })
+
+  const { poolId, action } = req.body ?? {}
+  if (!poolId || !action) return res.status(400).json({ error: 'poolId and action are required' })
+
+  try {
+    const [pool] = await db.select().from(golfPools).where(eq(golfPools.id, poolId)).limit(1)
+    if (!pool) return res.status(404).json({ error: 'Pool not found' })
+    if (pool.createdBy !== userId) {
+      return res.status(403).json({ error: 'Only the pool owner can manage the draft' })
+    }
+    if (pool.pickMode !== 'draft') {
+      return res.status(400).json({ error: 'This pool is a pick’em, not a draft' })
+    }
+
+    const [tournament] = await db
+      .select()
+      .from(golfTournaments)
+      .where(eq(golfTournaments.id, pool.tournamentId))
+      .limit(1)
+    if (!tournament) return res.status(404).json({ error: 'Tournament not found' })
+
+    // The draftable pool is this event's field only — golfers not
+    // playing never enter the draft.
+    const buildItems = async () => {
+      const field = await db
+        .select({
+          id: golfGolfers.id,
+          name: golfGolfers.name,
+          worldRanking: golfGolfers.worldRanking,
+          country: golfGolfers.country,
+          seasonStats: golfGolfers.seasonStats,
+          teeTime: golfTournamentField.teeTime,
+        })
+        .from(golfTournamentField)
+        .innerJoin(golfGolfers, eq(golfTournamentField.golferId, golfGolfers.id))
+        .where(
+          and(
+            eq(golfTournamentField.tournamentId, tournament.id),
+            eq(golfTournamentField.isWithdrawn, false)
+          )
+        )
+      return field.map((g) => ({
+        ref: g.id,
+        name: g.name,
+        rankHint: g.worldRanking ?? null,
+        meta: {
+          country: g.country,
+          worldRanking: g.worldRanking,
+          teeTime: g.teeTime,
+          seasonStats: g.seasonStats,
+        },
+      }))
+    }
+
+    if (action === 'create') {
+      if (pool.draftId) return res.status(409).json({ error: 'Draft already created' })
+
+      const entries = await db
+        .select({
+          userId: golfPoolEntries.userId,
+          createdAt: golfPoolEntries.createdAt,
+          displayName: users.displayName,
+          email: users.email,
+        })
+        .from(golfPoolEntries)
+        .innerJoin(users, eq(golfPoolEntries.userId, users.id))
+        .where(eq(golfPoolEntries.poolId, pool.id))
+        .orderBy(golfPoolEntries.createdAt)
+      if (entries.length < 2) {
+        return res.status(400).json({ error: 'Need at least 2 entries before drafting' })
+      }
+
+      const items = await buildItems()
+      if (items.length === 0) {
+        return res.status(400).json({ error: 'The field for this event has not been published yet' })
+      }
+
+      const appUrl = process.env.VITE_APP_URL || 'https://golf.mnsfantasy.com'
+      const { draft } = await createDraft({
+        gameSlug: 'golf-masters-2026',
+        scopeType: 'pool',
+        scopeId: pool.id,
+        name: `${pool.name} · ${tournament.name}`,
+        lobbyUrl: `${appUrl}/pools/${pool.id}/draft`,
+        mode: 'draft',
+        orderType: 'snake',
+        rounds: pool.rosterSize,
+        pickSeconds: pool.draftPickSeconds,
+        slowPickHours: 12,
+        createdBy: userId,
+        // Join order becomes draft order; the owner can still reorder in
+        // the lobby before starting.
+        participants: entries.map((e, i) => ({
+          userId: e.userId,
+          email: e.email,
+          teamName: e.displayName || `Team ${i + 1}`,
+          slot: i + 1,
+        })),
+        items,
+      })
+
+      await db
+        .update(golfPools)
+        .set({ draftId: draft.id, updatedAt: new Date() })
+        .where(eq(golfPools.id, pool.id))
+      return res.status(201).json({ draftId: draft.id })
+    }
+
+    if (!pool.draftId) return res.status(400).json({ error: 'No draft has been created yet' })
+
+    if (action === 'refresh_field') {
+      const items = await buildItems()
+      await controlDraft(pool.draftId, { action: 'set_items', items })
+      return res.status(200).json({ ok: true, items: items.length })
+    }
+
+    if (action === 'start' || action === 'pause' || action === 'resume') {
+      const result = await controlDraft(pool.draftId, { action })
+      return res.status(200).json(result)
+    }
+
+    // Write finished draft results into pool entries so scoring, the
+    // leaderboard and everything downstream work unchanged.
+    if (action === 'sync') {
+      const state = (await getDraftState(pool.draftId)) as {
+        draft: { status: string }
+        participants: Array<{ id: string; userId: string }>
+        board: Array<{ participantId: string; item: { ref: string } | null }>
+      }
+      const byParticipant = new Map(state.participants.map((p) => [p.id, p.userId]))
+      const picksByUser = new Map<string, string[]>()
+      for (const slot of state.board) {
+        if (!slot.item) continue
+        const uid = byParticipant.get(slot.participantId)
+        if (!uid) continue
+        const list = picksByUser.get(uid) ?? []
+        list.push(slot.item.ref)
+        picksByUser.set(uid, list)
+      }
+
+      let updated = 0
+      for (const [uid, golferIds] of picksByUser) {
+        await db
+          .update(golfPoolEntries)
+          .set({ golferIds, submittedAt: new Date(), updatedAt: new Date() })
+          .where(and(eq(golfPoolEntries.poolId, pool.id), eq(golfPoolEntries.userId, uid)))
+        updated++
+      }
+      return res.status(200).json({ ok: true, draftStatus: state.draft.status, entriesUpdated: updated })
+    }
+
+    return res.status(400).json({ error: `Unknown action: ${action}` })
+  } catch (error) {
+    console.error('POST /api/pools/draft error:', error)
+    return res.status(500).json({
+      error: error instanceof Error ? error.message : 'Internal server error',
+    })
+  }
+}

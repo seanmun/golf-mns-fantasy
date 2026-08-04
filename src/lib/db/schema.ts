@@ -136,6 +136,14 @@ export const golfPools = golfSchema.table('pools', {
   isPublic: boolean('is_public').notNull().default(true),
   joinCode: text('join_code').unique(),
   status: text('status').notNull().default('open'), // open | locked | active | completed | cancelled
+  // pickem: anyone can pick any golfer, duplicates allowed (the original
+  // behavior). draft: a snake draft where each golfer goes once, run by
+  // the platform draft service — see draftId.
+  pickMode: text('pick_mode').$type<'pickem' | 'draft'>().notNull().default('pickem'),
+  // null = slow draft (12h per pick); otherwise seconds on the clock.
+  draftPickSeconds: integer('draft_pick_seconds'),
+  // Set once the draft has been created in the hub's draft service.
+  draftId: uuid('draft_id'),
   scoringConfig: jsonb('scoring_config').notNull().default({
     hole_in_one: 15,
     albatross: 12,

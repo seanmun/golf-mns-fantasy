@@ -21,6 +21,8 @@ async function getPools(req: VercelRequest, res: VercelResponse) {
         description: golfPools.description,
         tournamentId: golfPools.tournamentId,
         rosterSize: golfPools.rosterSize,
+        pickMode: golfPools.pickMode,
+        draftId: golfPools.draftId,
         maxEntries: golfPools.maxEntries,
         status: golfPools.status,
         createdBy: golfPools.createdBy,
@@ -66,7 +68,16 @@ async function createPool(req: VercelRequest, res: VercelResponse) {
     const userId = await verifyAuth(req)
     if (!userId) return res.status(401).json({ error: 'Unauthorized' })
 
-    const { name, description, tournamentId, rosterSize, maxEntries, isPublic } = req.body
+    const {
+      name,
+      description,
+      tournamentId,
+      rosterSize,
+      maxEntries,
+      isPublic,
+      pickMode,
+      draftPickSeconds,
+    } = req.body
 
     if (!name || !tournamentId) {
       return res.status(400).json({ error: 'name and tournamentId are required' })
@@ -86,6 +97,10 @@ async function createPool(req: VercelRequest, res: VercelResponse) {
         isPublic: isPublic !== false,
         joinCode,
         status: 'open',
+        pickMode: pickMode === 'draft' ? 'draft' : 'pickem',
+        // Only meaningful for draft pools; null means a slow draft.
+        draftPickSeconds:
+          pickMode === 'draft' && draftPickSeconds ? Number(draftPickSeconds) : null,
       })
       .returning()
 

@@ -15,6 +15,9 @@ export function PoolCreate() {
     tournamentId: '',
     rosterSize: 6,
     isPublic: true,
+    pickMode: 'pickem' as 'pickem' | 'draft',
+    // null = slow draft (12h per pick); a number is seconds on the clock.
+    draftPickSeconds: 120 as number | null,
   })
 
   const { data: tournamentsData, isLoading } = useQuery({
@@ -184,6 +187,62 @@ export function PoolCreate() {
             required
           />
         </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text-secondary)' }}>
+            Format
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            {([
+              ['pickem', "Pick'em", 'Everyone picks freely — two teams can have the same golfer.'],
+              ['draft', 'Draft', 'Snake draft; each golfer can only be taken once.'],
+            ] as const).map(([value, label, blurb]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setForm({ ...form, pickMode: value })}
+                className="text-left p-3 rounded-lg border transition-colors"
+                style={{
+                  background: 'var(--color-surface)',
+                  borderColor:
+                    form.pickMode === value ? 'var(--color-green-primary)' : 'var(--color-border)',
+                }}
+              >
+                <div className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+                  {label}
+                </div>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-muted)' }}>{blurb}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {form.pickMode === 'draft' && (
+          <div>
+            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text-secondary)' }}>
+              Pick clock
+            </label>
+            <select
+              value={form.draftPickSeconds === null ? 'slow' : String(form.draftPickSeconds)}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  draftPickSeconds: e.target.value === 'slow' ? null : Number(e.target.value),
+                })
+              }
+              className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none"
+              style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
+            >
+              <option value="60">Timed — 1 minute per pick</option>
+              <option value="120">Timed — 2 minutes per pick</option>
+              <option value="300">Timed — 5 minutes per pick</option>
+              <option value="slow">Slow draft — 12 hours, emailed when you're up</option>
+            </select>
+            <p className="mt-1.5 text-xs" style={{ color: 'var(--color-text-muted)' }}>
+              Miss the clock and the best available golfer is picked for you.
+            </p>
+          </div>
+        )}
 
         <div>
           <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-text-secondary)' }}>
