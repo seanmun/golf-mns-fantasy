@@ -41,15 +41,15 @@ function syncStatusLine(tournament: any): string | null {
 // stays accurate.
 function ScoringLegend({ config }: { config: ScoringConfig }) {
   const sign = (n: number) => (n > 0 ? `+${n}` : `${n}`)
-  const holes: Array<[string, number]> = [
-    ['Ace', config.hole_in_one],
-    ['Albatross', config.albatross],
-    ['Eagle', config.eagle],
-    ['Birdie', config.birdie],
-    ['Par', config.par],
-    ['Bogey', config.bogey],
-    ['Double', config.double_bogey],
-    ['Worse', config.worse_than_double],
+  const holes: Array<[string, number, ScoreKind]> = [
+    ['Ace', config.hole_in_one, 'ace'],
+    ['Albatross', config.albatross, 'albatross'],
+    ['Eagle', config.eagle, 'eagle'],
+    ['Birdie', config.birdie, 'birdie'],
+    ['Par', config.par, 'par'],
+    ['Bogey', config.bogey, 'bogey'],
+    ['Double', config.double_bogey, 'double'],
+    ['Worse', config.worse_than_double, 'worse'],
   ]
   const podium = Object.entries(config.position_bonuses ?? {})
     .map(([pos, pts]) => [Number(pos), Number(pts)] as [number, number])
@@ -61,23 +61,19 @@ function ScoringLegend({ config }: { config: ScoringConfig }) {
         Scoring
       </summary>
       <div className="px-4 pb-3 pt-1">
-        <div className="flex flex-wrap gap-x-3 gap-y-1">
-          {holes.map(([label, pts]) => (
-            <span key={label} className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-              {label}{' '}
-              <span
-                className="font-mono"
-                style={{
-                  color:
-                    pts > 0
-                      ? 'var(--color-green-primary)'
-                      : pts < 0
-                        ? 'var(--color-score-bogey)'
-                        : 'var(--color-text-secondary)',
-                }}
-              >
-                {sign(pts)}
-              </span>
+        <div className="flex flex-wrap gap-1.5">
+          {holes.map(([label, pts, kind]) => (
+            <span
+              key={label}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs"
+              style={{
+                background: 'var(--color-surface-2)',
+                color: SCORE_STYLE[kind].color,
+                fontWeight: SCORE_STYLE[kind].weight,
+              }}
+            >
+              {label}
+              <span className="font-mono">{sign(pts)}</span>
             </span>
           ))}
         </div>
@@ -139,14 +135,45 @@ function golferPoints(results: any, config: ScoringConfig): number {
   )
 }
 
-// Golf-style score coloring for a hole cell.
-function holeColor(score: number, par: number): { color: string; weight: number } {
+// One palette for every score reference in the app — the legend teaches
+// the same colors used in the hole-by-hole cells.
+type ScoreKind =
+  | 'ace'
+  | 'albatross'
+  | 'eagle'
+  | 'birdie'
+  | 'par'
+  | 'bogey'
+  | 'double'
+  | 'worse'
+
+// A distinct color per tier, running best -> worst:
+// purple, cyan, blue, green, grey, yellow, orange, red.
+const SCORE_STYLE: Record<ScoreKind, { color: string; weight: number }> = {
+  ace: { color: '#bf5af2', weight: 700 },
+  albatross: { color: '#00e5ff', weight: 700 },
+  eagle: { color: '#3b82f6', weight: 700 },
+  birdie: { color: '#00ff87', weight: 700 },
+  par: { color: '#8e8e9a', weight: 400 },
+  bogey: { color: '#ffd60a', weight: 600 },
+  double: { color: '#ff9f0a', weight: 700 },
+  worse: { color: '#ff453a', weight: 700 },
+}
+
+function kindOf(score: number, par: number): ScoreKind {
+  if (score === 1) return 'ace'
   const diff = score - par
-  if (score === 1 || diff <= -2) return { color: 'var(--color-gold)', weight: 700 }
-  if (diff === -1) return { color: 'var(--color-green-primary)', weight: 700 }
-  if (diff === 0) return { color: 'var(--color-text-secondary)', weight: 400 }
-  if (diff === 1) return { color: 'var(--color-score-bogey)', weight: 600 }
-  return { color: '#ff4d4d', weight: 700 }
+  if (diff <= -3) return 'albatross'
+  if (diff === -2) return 'eagle'
+  if (diff === -1) return 'birdie'
+  if (diff === 0) return 'par'
+  if (diff === 1) return 'bogey'
+  if (diff === 2) return 'double'
+  return 'worse'
+}
+
+function holeColor(score: number, par: number) {
+  return SCORE_STYLE[kindOf(score, par)]
 }
 
 function ScorecardPanel({ scorecards }: { scorecards: Array<{ round: number; holes: Record<string, { score: number; par: number }>; strokes: number }> }) {
