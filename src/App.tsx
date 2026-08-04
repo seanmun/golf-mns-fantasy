@@ -1,5 +1,5 @@
 import { Routes, Route } from 'react-router-dom'
-import { SignedIn, SignedOut, RedirectToSignIn, SignIn, SignUp } from '@clerk/clerk-react'
+import { SignedIn, SignedOut, RedirectToSignIn, SignIn, SignUp, useUser } from '@clerk/clerk-react'
 import { AppShell } from '@/components/layout/AppShell'
 import { Landing } from '@/pages/Landing'
 import { Dashboard } from '@/pages/Dashboard'
@@ -24,6 +24,15 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   )
 }
 
+// Signed-in users get the dashboard as their home; everyone else sees
+// the marketing landing page. Rendered (not redirected) so the URL stays
+// "/", and gated on isLoaded to avoid flashing the wrong one.
+function Home() {
+  const { isLoaded, isSignedIn } = useUser()
+  if (!isLoaded) return null
+  return isSignedIn ? <Dashboard /> : <Landing />
+}
+
 function AuthPage({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '80vh' }}>
@@ -36,7 +45,7 @@ export default function App() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route path="/" element={<Landing />} />
+        <Route path="/" element={<Home />} />
         <Route path="/sign-in/*" element={<AuthPage><SignIn routing="path" path="/sign-in" signUpUrl="/sign-up" fallbackRedirectUrl="/dashboard" /></AuthPage>} />
         <Route path="/sign-up/*" element={<AuthPage><SignUp routing="path" path="/sign-up" signInUrl="/sign-in" fallbackRedirectUrl="/dashboard" /></AuthPage>} />
         <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

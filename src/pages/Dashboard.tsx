@@ -50,10 +50,18 @@ export function Dashboard() {
         />
       ) : (
         <div className="grid gap-4">
-          {pools.map((pool: any) => (
+          {pools.map((pool: any) => {
+            // Once an event is under way (or done) the standings are what
+            // people want; before that, the pool page with its pick flow.
+            const started =
+              pool.tournamentStatus === 'active' ||
+              pool.tournamentStatus === 'completed' ||
+              (pool.tournamentStartDate &&
+                new Date(pool.tournamentStartDate).getTime() <= Date.now())
+            return (
             <Link
               key={pool.id}
-              to={`/pools/${pool.id}`}
+              to={started ? `/pools/${pool.id}/leaderboard` : `/pools/${pool.id}`}
               className="block p-5 rounded-xl border transition-all"
               style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
             >
@@ -62,6 +70,15 @@ export function Dashboard() {
                   <h3 className="font-semibold" style={{ color: 'var(--color-text-primary)' }}>{pool.name}</h3>
                   <p className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>
                     {pool.tournamentName}
+                    {pool.tournamentStartDate && (
+                      <span style={{ color: 'var(--color-text-muted)' }}>
+                        {' · '}
+                        {new Date(pool.tournamentStartDate).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                        })}
+                      </span>
+                    )}
                   </p>
                 </div>
                 <div className="text-right">
@@ -74,7 +91,8 @@ export function Dashboard() {
                 </div>
               </div>
             </Link>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

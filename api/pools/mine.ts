@@ -21,11 +21,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         poolStatus: golfPools.status,
         tournamentName: golfTournaments.name,
         tournamentStatus: golfTournaments.status,
+        tournamentStartDate: golfTournaments.startDate,
+        tournamentEndDate: golfTournaments.endDate,
       })
       .from(golfPoolEntries)
       .innerJoin(golfPools, eq(golfPoolEntries.poolId, golfPools.id))
       .innerJoin(golfTournaments, eq(golfPools.tournamentId, golfTournaments.id))
       .where(eq(golfPoolEntries.userId, userId))
+      // Soonest event first; in-progress and upcoming events lead.
+      .orderBy(golfTournaments.startDate)
 
     const pools = entries.map((e) => ({
       id: e.poolId,
@@ -33,10 +37,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       status: e.poolStatus,
       tournamentName: e.tournamentName,
       tournamentStatus: e.tournamentStatus,
+      tournamentStartDate: e.tournamentStartDate?.toISOString() ?? null,
+      tournamentEndDate: e.tournamentEndDate?.toISOString() ?? null,
       totalPoints: e.totalPoints,
       rank: e.rank,
       picksCount: (e.golferIds as string[]).length,
     }))
+
+    // Live/upcoming events first (soonest first), finished events after
+    // (most recent first).
+    const rank = (p: (typeof pools)[number]) =>
+      p.tournamentStatus === 'completed' ? 1 : 0
+    const time = (d: string | null) => (d ? new Date(d).getTime() : 0)
+    pools.sort((a, b) => {
+      const ra = rank(a)
+      const rb = rank(b)
+      if (ra !== rb) return ra - rb
+      return ra === 1
+        ? time(b.tournamentStartDate) - time(a.tournamentStartDate)
+        : time(a.tournamentStartDate) - time(b.tournamentStartDate)
+    })
 
     return res.status(200).json({ pools })
   } catch (error) {
