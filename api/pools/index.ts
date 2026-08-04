@@ -104,6 +104,15 @@ async function createPool(req: VercelRequest, res: VercelResponse) {
       })
       .returning()
 
+    // The creator is a member of their own pool — otherwise they'd have
+    // to join it separately and the member list looks empty.
+    await db.insert(golfPoolEntries).values({
+      poolId: pool.id,
+      userId,
+      golferIds: [],
+      isLocked: false,
+    })
+
     return res.status(201).json({ pool })
   } catch (error) {
     console.error('POST /api/pools error:', error)
