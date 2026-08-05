@@ -3,7 +3,7 @@ import { db } from '../_db.js'
 import { verifyAuth, isAdmin } from '../_middleware.js'
 import { golfPools, golfTournaments, golfPoolEntries } from '../../src/lib/db/schema.js'
 import { eq, count } from 'drizzle-orm'
-import { getDraftState } from '../_draftService.js'
+import { getDraftState, controlDraft } from '../_draftService.js'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'DELETE') return handleDelete(req, res)
@@ -86,6 +86,14 @@ async function handleDelete(req: VercelRequest, res: VercelResponse) {
       return res.status(403).json({ error: 'Forbidden' })
     }
 
+    // Cancel the draft in the hub first so it isn't orphaned pointing at
+    // a pool that no longer exists.
+    if (pool.draftId) {
+      await controlDraft(pool.draftId, { action: 'cancel' }).catch(() => {
+        /* a stuck draft service shouldn't block deleting the pool */
+      })
+    }
+
     // Delete entries first, then the pool
     await db.delete(golfPoolEntries).where(eq(golfPoolEntries.poolId, pool.id))
     await db.delete(golfPools).where(eq(golfPools.id, pool.id))
@@ -129,6 +137,18 @@ async function handleUpdate(req: VercelRequest, res: VercelResponse) {
         }
       } catch {
         // Draft service unreachable — allow the edit rather than block.
+      }
+    }
+
+    if (maxEntries !== undefined && maxEntries !== null) {
+      const [{ value: current }] = await db
+        .select({ value: count() })
+        .from(golfPoolEntries)
+        .where(eq(golfPoolEntries.poolId, pool.id))
+      if (maxEntries < current) {
+        return res
+          .status(400)
+          .json({ error: `${current} teams have already joined — max entries can't be lower` })
       }
     }
 

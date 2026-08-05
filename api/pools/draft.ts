@@ -10,7 +10,12 @@ import {
   golfGolfers,
   users,
 } from '../../src/lib/db/schema.js'
-import { createDraft, controlDraft, getDraftState } from '../_draftService.js'
+import {
+  createDraft,
+  controlDraft,
+  getDraftState,
+  findDraftByScope,
+} from '../_draftService.js'
 
 // POST /api/pools/draft { poolId, action }
 //   create — build the draft in the hub from this pool's entries and the
@@ -98,8 +103,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }))
     }
 
+    const GAME_SLUG = 'golf-masters-2026'
+
     if (action === 'create') {
       if (pool.draftId) return res.status(409).json({ error: 'Draft already created' })
+
+      // If a previous attempt created the draft but failed before saving
+      // its id, adopt it rather than wedging on the hub's 409.
+      const existing = await findDraftByScope(GAME_SLUG, 'pool', pool.id).catch(() => null)
+      if (existing?.draft) {
+        await db
+          .update(golfPools)
+          .set({ draftId: existing.draft.id, updatedAt: new Date() })
+          .where(eq(golfPools.id, pool.id))
+        return res.status(200).json({ draftId: existing.draft.id, adopted: true })
+      }
 
       const participants = await buildParticipants()
       if (participants.length < 2) {
@@ -113,7 +131,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const appUrl = process.env.VITE_APP_URL || 'https://golf.mnsfantasy.com'
       const { draft } = await createDraft({
-        gameSlug: 'golf-masters-2026',
+        gameSlug: GAME_SLUG,
         scopeType: 'pool',
         scopeId: pool.id,
         name: `${pool.name} · ${tournament.name}`,
@@ -173,34 +191,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json(result)
     }
 
-    // Write finished draft results into pool entries so scoring, the
-    // leaderboard and everything downstream work unchanged.
+    // Write draft results into pool entries so scoring, the leaderboard
+    // and everything downstream work unchanged. Also runs automatically
+    // from /api/pools/draft-sync the moment a draft completes, so nobody
+    // has to remember to click anything.
     if (action === 'sync') {
-      const state = (await getDraftState(pool.draftId)) as {
-        draft: { status: string }
-        participants: Array<{ id: string; userId: string }>
-        board: Array<{ participantId: string; item: { ref: string } | null }>
-      }
-      const byParticipant = new Map(state.participants.map((p) => [p.id, p.userId]))
-      const picksByUser = new Map<string, string[]>()
-      for (const slot of state.board) {
-        if (!slot.item) continue
-        const uid = byParticipant.get(slot.participantId)
-        if (!uid) continue
-        const list = picksByUser.get(uid) ?? []
-        list.push(slot.item.ref)
-        picksByUser.set(uid, list)
-      }
-
-      let updated = 0
-      for (const [uid, golferIds] of picksByUser) {
-        await db
-          .update(golfPoolEntries)
-          .set({ golferIds, submittedAt: new Date(), updatedAt: new Date() })
-          .where(and(eq(golfPoolEntries.poolId, pool.id), eq(golfPoolEntries.userId, uid)))
-        updated++
-      }
-      return res.status(200).json({ ok: true, draftStatus: state.draft.status, entriesUpdated: updated })
+      const result = await syncDraftToEntries(pool.id, pool.draftId)
+      return res.status(200).json({ ok: true, ...result })
     }
 
     return res.status(400).json({ error: `Unknown action: ${action}` })
@@ -210,4 +207,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       error: error instanceof Error ? error.message : 'Internal server error',
     })
   }
+}
+
+// Copy every made pick into its owner's pool entry.
+export async function syncDraftToEntries(poolId: string, draftId: string) {
+  const state = (await getDraftState(draftId)) as {
+    draft: { status: string }
+    participants: Array<{ id: string; userId: string }>
+    board: Array<{ participantId: string; item: { ref: string } | null }>
+  }
+  const byParticipant = new Map(state.participants.map((p) => [p.id, p.userId]))
+  const picksByUser = new Map<string, string[]>()
+  for (const slot of state.board) {
+    if (!slot.item) continue
+    const uid = byParticipant.get(slot.participantId)
+    if (!uid) continue
+    const list = picksByUser.get(uid) ?? []
+    list.push(slot.item.ref)
+    picksByUser.set(uid, list)
+  }
+
+  let entriesUpdated = 0
+  for (const [uid, golferIds] of picksByUser) {
+    await db
+      .update(golfPoolEntries)
+      .set({ golferIds, submittedAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(golfPoolEntries.poolId, poolId), eq(golfPoolEntries.userId, uid)))
+    entriesUpdated++
+  }
+  return { draftStatus: state.draft.status, entriesUpdated }
 }

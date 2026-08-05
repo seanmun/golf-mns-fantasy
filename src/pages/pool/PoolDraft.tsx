@@ -121,6 +121,21 @@ export function PoolDraft() {
     })()
   }, [state, getToken, refetch])
 
+  // Rosters save themselves the moment the board finishes — nobody has
+  // to remember to press a button.
+  const savedFor = useRef<string | null>(null)
+  useEffect(() => {
+    if (state?.draft.status !== 'complete' || !poolId) return
+    if (savedFor.current === state.draft.id) return
+    savedFor.current = state.draft.id
+    void apiFetch('/api/pools/draft-sync', {
+      method: 'POST',
+      body: JSON.stringify({ poolId }),
+    }).catch(() => {
+      /* the owner can still press Save rosters */
+    })
+  }, [state?.draft.status, state?.draft.id, poolId, apiFetch])
+
   const teamById = useMemo(
     () => new Map((state?.participants ?? []).map((p) => [p.id, p])),
     [state?.participants]

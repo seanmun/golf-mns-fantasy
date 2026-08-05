@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { db } from '../_db.js'
 import { verifyAuth } from '../_middleware.js'
-import { golfPools, golfPoolEntries } from '../../src/lib/db/schema.js'
+import { golfPools, golfPoolEntries, golfTournaments } from '../../src/lib/db/schema.js'
 import { eq, and, count } from 'drizzle-orm'
 import { getDraftState } from '../_draftService.js'
 
@@ -33,6 +33,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .limit(1)
 
     if (existing) return res.status(200).json({ pool, alreadyJoined: true })
+
+    // The event itself may have started even if a sync hasn't yet
+    // flipped the pool to locked.
+    const [tournament] = await db
+      .select({ lockTime: golfTournaments.lockTime, status: golfTournaments.status })
+      .from(golfTournaments)
+      .where(eq(golfTournaments.id, pool.tournamentId))
+      .limit(1)
+    if (
+      tournament &&
+      (tournament.status === 'completed' || new Date() >= tournament.lockTime)
+    ) {
+      return res.status(400).json({ error: 'This event has already started' })
+    }
 
     // A started draft has fixed pick slots — joining now would leave
     // someone in the pool with no way to draft a team.

@@ -61,6 +61,15 @@ export function createDraft(input: CreateDraftInput) {
   })
 }
 
+// Recover a draft the hub already created when golf failed to persist
+// its id — otherwise the pool is wedged (golf sees no draft, the hub
+// refuses to create a second one for the same scope).
+export function findDraftByScope(gameSlug: string, scopeType: string, scopeId: string) {
+  return call<{ draft: { id: string } | null }>(
+    `?gameSlug=${encodeURIComponent(gameSlug)}&scopeType=${scopeType}&scopeId=${encodeURIComponent(scopeId)}`
+  )
+}
+
 export function getDraftState(draftId: string) {
   return call<Record<string, unknown>>(`/${draftId}`)
 }

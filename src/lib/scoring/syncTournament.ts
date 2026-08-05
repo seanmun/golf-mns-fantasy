@@ -10,6 +10,7 @@ import {
 } from '../db/schema.js'
 import { recalculatePool } from './recalculatePool.js'
 import { recomputeSeasonStats } from './seasonStats.js'
+import { controlDraft } from '../../../api/_draftService.js'
 import {
   sgFetch,
   num,
@@ -87,6 +88,7 @@ export async function syncTournament(
     for (const e of entries) for (const id of e.golferIds as string[]) pickedGolferIds.add(id)
   }
 
+  const withdrawnRefs: string[] = []
   let resultsUpserted = 0
   let fieldAdded = 0
   let unmatched = 0
@@ -102,6 +104,12 @@ export async function syncTournament(
     const isCut = row.status === 'cut'
     const isWithdrawn = row.status === 'wd'
     const teeTime = row.teeTime ?? null
+
+    // A withdrawal must stop being draftable immediately — otherwise a
+    // live draft can still take a player who is out.
+    if (isWithdrawn && !fieldByGolfer.get(golfer.id)?.isWithdrawn) {
+      withdrawnRefs.push(golfer.id)
+    }
 
     const fieldRow = fieldByGolfer.get(golfer.id)
     if (!fieldRow) {
@@ -238,6 +246,22 @@ export async function syncTournament(
 
   if (newStatus === 'completed' && tournament.status !== 'completed') {
     await recomputeSeasonStats(db, tournament.season)
+  }
+
+  // Tell any draft on this event that these golfers are out.
+  if (withdrawnRefs.length > 0) {
+    for (const pool of pools) {
+      if (pool.pickMode !== 'draft' || !pool.draftId) continue
+      for (const ref of withdrawnRefs) {
+        await controlDraft(pool.draftId, {
+          action: 'set_available',
+          ref,
+          available: false,
+        }).catch(() => {
+          /* a withdrawal that can't be pushed shouldn't fail the sync */
+        })
+      }
+    }
   }
 
   return {

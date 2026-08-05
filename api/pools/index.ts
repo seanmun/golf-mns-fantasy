@@ -83,7 +83,37 @@ async function createPool(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: 'name and tournamentId are required' })
     }
 
-    const joinCode = Math.random().toString(36).substring(2, 8).toUpperCase()
+    // A pool for an event that already teed off is dead on arrival —
+    // it locks immediately and nobody can pick.
+    const [tournament] = await db
+      .select({ lockTime: golfTournaments.lockTime, status: golfTournaments.status })
+      .from(golfTournaments)
+      .where(eq(golfTournaments.id, tournamentId))
+      .limit(1)
+    if (!tournament) return res.status(404).json({ error: 'Tournament not found' })
+    if (
+      tournament.status === 'completed' ||
+      tournament.status === 'cancelled' ||
+      new Date() >= tournament.lockTime
+    ) {
+      return res
+        .status(400)
+        .json({ error: 'That event has already started — pick an upcoming one' })
+    }
+
+    // Join codes are random; retry a few times rather than 500 on the
+    // rare unique-constraint collision.
+    const makeCode = () => Math.random().toString(36).substring(2, 8).toUpperCase()
+    let joinCode = makeCode()
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const [clash] = await db
+        .select({ id: golfPools.id })
+        .from(golfPools)
+        .where(eq(golfPools.joinCode, joinCode))
+        .limit(1)
+      if (!clash) break
+      joinCode = makeCode()
+    }
 
     const [pool] = await db
       .insert(golfPools)
