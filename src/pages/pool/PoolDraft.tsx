@@ -30,6 +30,8 @@ interface DraftState {
     isAuto: boolean
     item: { id: string; name: string; meta: Record<string, unknown> | null } | null
   }>
+  myQueue: string[]
+  myAutodraft: boolean
   current: { overall: number; round: number; pickInRound: number; participantId: string } | null
   onTheClock: { id: string; teamName: string; userId: string } | null
   isMyTurn: boolean
@@ -203,6 +205,45 @@ export function PoolDraft() {
     }
   }
 
+  const queue = state?.myQueue ?? []
+  const queuedSet = new Set(queue)
+
+  const saveQueue = async (itemIds: string[]) => {
+    try {
+      await hubFetch(`/${draftId}/queue`, {
+        method: 'POST',
+        body: JSON.stringify({ itemIds }),
+      })
+      await refetch()
+    } catch (e: any) {
+      toast.error(e.message)
+    }
+  }
+
+  const toggleQueued = (itemId: string) =>
+    saveQueue(queuedSet.has(itemId) ? queue.filter((q) => q !== itemId) : [...queue, itemId])
+
+  const moveQueued = (index: number, delta: number) => {
+    const next = [...queue]
+    const target = index + delta
+    if (target < 0 || target >= next.length) return
+    ;[next[index], next[target]] = [next[target], next[index]]
+    void saveQueue(next)
+  }
+
+  const setAutodraft = async (enabled: boolean) => {
+    try {
+      await hubFetch(`/${draftId}/queue`, {
+        method: 'POST',
+        body: JSON.stringify({ autodraft: enabled }),
+      })
+      toast.success(enabled ? 'Autodraft on' : 'Autodraft off')
+      await refetch()
+    } catch (e: any) {
+      toast.error(e.message)
+    }
+  }
+
   if (!pool) return <LoadingSpinner />
 
   if (pool.pickMode !== 'draft') {
@@ -365,6 +406,21 @@ export function PoolDraft() {
                     </div>
                   </div>
                   <button
+                    onClick={() => toggleQueued(item.id)}
+                    className="px-2 py-1.5 rounded-lg text-xs font-medium border"
+                    style={{
+                      borderColor: queuedSet.has(item.id)
+                        ? 'var(--color-green-primary)'
+                        : 'var(--color-border)',
+                      color: queuedSet.has(item.id)
+                        ? 'var(--color-green-primary)'
+                        : 'var(--color-text-muted)',
+                    }}
+                    title={queuedSet.has(item.id) ? 'Remove from queue' : 'Add to queue'}
+                  >
+                    {queuedSet.has(item.id) ? `#${queue.indexOf(item.id) + 1}` : '+ Queue'}
+                  </button>
+                  <button
                     onClick={() => pick(item.id)}
                     disabled={busy || !state.isMyTurn || draft.status !== 'active'}
                     className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-30"
@@ -385,6 +441,60 @@ export function PoolDraft() {
 
         {/* Board + my team */}
         <div className="space-y-4">
+          <div className="rounded-xl border p-3" style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
+                My queue ({queue.length})
+              </h3>
+              <label className="flex items-center gap-1.5 text-xs cursor-pointer" style={{ color: 'var(--color-text-secondary)' }}>
+                <input
+                  type="checkbox"
+                  checked={!!state.myAutodraft}
+                  onChange={(e) => setAutodraft(e.target.checked)}
+                  className="rounded"
+                />
+                Autodraft
+              </label>
+            </div>
+            {queue.length === 0 ? (
+              <p className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
+                Queue golfers and they'll be taken in this order when it's your pick — even if
+                you're away.
+              </p>
+            ) : (
+              <ol className="space-y-1">
+                {queue.map((itemId, i) => {
+                  const item =
+                    state.available.find((a) => a.id === itemId) ??
+                    state.board.find((b) => b.item?.id === itemId)?.item
+                  const gone = !state.available.some((a) => a.id === itemId)
+                  return (
+                    <li key={itemId} className="flex items-center gap-1.5 text-xs">
+                      <span className="font-mono w-4" style={{ color: 'var(--color-text-muted)' }}>
+                        {i + 1}
+                      </span>
+                      <span
+                        className="flex-1 truncate"
+                        style={{
+                          color: gone ? 'var(--color-text-muted)' : 'var(--color-text-primary)',
+                          textDecoration: gone ? 'line-through' : 'none',
+                        }}
+                      >
+                        {item?.name ?? 'Unknown'}
+                      </span>
+                      <button onClick={() => moveQueued(i, -1)} disabled={i === 0}
+                        className="px-1 disabled:opacity-20" style={{ color: 'var(--color-text-muted)' }}>↑</button>
+                      <button onClick={() => moveQueued(i, 1)} disabled={i === queue.length - 1}
+                        className="px-1 disabled:opacity-20" style={{ color: 'var(--color-text-muted)' }}>↓</button>
+                      <button onClick={() => toggleQueued(itemId)} className="px-1"
+                        style={{ color: 'var(--color-score-bogey)' }}>×</button>
+                    </li>
+                  )
+                })}
+              </ol>
+            )}
+          </div>
+
           <div className="rounded-xl border p-3" style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
             <h3 className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: 'var(--color-text-muted)' }}>
               My team ({myPicks.length}/{draft.rounds})
