@@ -66,6 +66,9 @@ export function PoolDraft() {
   const { apiFetch } = useApi()
   const [search, setSearch] = useState('')
   const [busy, setBusy] = useState(false)
+  // Mobile only: the two columns become tabs so the queue isn't buried
+  // under the whole field list.
+  const [mobileTab, setMobileTab] = useState<'draft' | 'queue' | 'team'>('draft')
   const expiredFor = useRef<number | null>(null)
 
   const { data: poolData } = useQuery({
@@ -379,9 +382,31 @@ export function PoolDraft() {
         </div>
       </div>
 
+      {/* Mobile tabs */}
+      <div className="flex gap-2 mb-4 lg:hidden">
+        {([
+          ['draft', 'Draft'],
+          ['queue', `Queue (${queue.length})`],
+          ['team', `Team (${myPicks.length}/${draft.rounds})`],
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setMobileTab(key)}
+            className="flex-1 py-2 rounded-lg text-xs font-medium transition-colors"
+            style={{
+              background: mobileTab === key ? 'var(--color-green-primary)' : 'var(--color-surface)',
+              color: mobileTab === key ? '#000' : 'var(--color-text-secondary)',
+              border: mobileTab === key ? 'none' : '1px solid var(--color-border)',
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       <div className="grid lg:grid-cols-[1fr_320px] gap-5">
         {/* Available golfers */}
-        <div>
+        <div className={mobileTab === 'draft' ? '' : 'hidden lg:block'}>
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -442,9 +467,9 @@ export function PoolDraft() {
           </div>
         </div>
 
-        {/* Board + my team */}
-        <div className="space-y-4">
-          <div className="rounded-xl border p-3" style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
+        {/* Queue, team and recent picks */}
+        <div className={`space-y-4 ${mobileTab === 'draft' ? 'hidden lg:block' : ''}`}>
+          <div className={`rounded-xl border p-3 ${mobileTab === 'team' ? 'hidden lg:block' : ''}`} style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>
                 My queue ({queue.length})
@@ -498,7 +523,7 @@ export function PoolDraft() {
             )}
           </div>
 
-          <div className="rounded-xl border p-3" style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
+          <div className={`rounded-xl border p-3 ${mobileTab === 'queue' ? 'hidden lg:block' : ''}`} style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
             <h3 className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: 'var(--color-text-muted)' }}>
               My team ({myPicks.length}/{draft.rounds})
             </h3>
