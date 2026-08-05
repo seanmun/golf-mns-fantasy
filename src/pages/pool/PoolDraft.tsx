@@ -178,21 +178,6 @@ export function PoolDraft() {
     }
   }
 
-  const control = async (action: string) => {
-    setBusy(true)
-    try {
-      await hubFetch(`/${draftId}/control`, {
-        method: 'POST',
-        body: JSON.stringify({ action }),
-      })
-      await refetch()
-    } catch (e: any) {
-      toast.error(e.message)
-    } finally {
-      setBusy(false)
-    }
-  }
-
   const pick = async (itemId: string) => {
     setBusy(true)
     try {
@@ -335,7 +320,7 @@ export function PoolDraft() {
           )}
           {isOwner && draft.status === 'setup' && (
             <button
-              onClick={() => control('start')}
+              onClick={() => poolAction('start')}
               disabled={busy}
               className="px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50"
               style={{ background: 'var(--color-green-primary)', color: '#000' }}
@@ -345,7 +330,7 @@ export function PoolDraft() {
           )}
           {isOwner && draft.status === 'active' && (
             <button
-              onClick={() => control('pause')}
+              onClick={() => poolAction('pause')}
               disabled={busy}
               className="px-3 py-1.5 rounded-lg text-xs border"
               style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}
@@ -355,7 +340,7 @@ export function PoolDraft() {
           )}
           {isOwner && draft.status === 'paused' && (
             <button
-              onClick={() => control('resume')}
+              onClick={() => poolAction('resume')}
               disabled={busy}
               className="px-3 py-1.5 rounded-lg text-xs"
               style={{ background: 'var(--color-green-primary)', color: '#000' }}
