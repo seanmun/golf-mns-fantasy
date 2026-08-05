@@ -3,6 +3,7 @@ import { db } from '../_db.js'
 import { verifyAuth } from '../_middleware.js'
 import { golfPools, golfPoolEntries } from '../../src/lib/db/schema.js'
 import { eq, and, count } from 'drizzle-orm'
+import { getDraftState } from '../_draftService.js'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
@@ -32,6 +33,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .limit(1)
 
     if (existing) return res.status(200).json({ pool, alreadyJoined: true })
+
+    // A started draft has fixed pick slots — joining now would leave
+    // someone in the pool with no way to draft a team.
+    if (pool.pickMode === 'draft' && pool.draftId) {
+      try {
+        const state = (await getDraftState(pool.draftId)) as { draft: { status: string } }
+        if (state.draft.status !== 'setup') {
+          return res.status(400).json({ error: 'The draft has already started' })
+        }
+      } catch {
+        // If the draft service is unreachable, don't block the join.
+      }
+    }
 
     // Check max entries
     if (pool.maxEntries) {

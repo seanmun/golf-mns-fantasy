@@ -44,6 +44,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .limit(1)
     if (!tournament) return res.status(404).json({ error: 'Tournament not found' })
 
+    // Draft order = join order, rebuilt from whoever is in the pool
+    // right now. Called again at start time so late joiners get a slot.
+    const buildParticipants = async () => {
+      const entries = await db
+        .select({
+          userId: golfPoolEntries.userId,
+          displayName: users.displayName,
+          email: users.email,
+        })
+        .from(golfPoolEntries)
+        .innerJoin(users, eq(golfPoolEntries.userId, users.id))
+        .where(eq(golfPoolEntries.poolId, pool.id))
+        .orderBy(golfPoolEntries.createdAt)
+      return entries.map((e, i) => ({
+        userId: e.userId,
+        email: e.email,
+        teamName: e.displayName || `Team ${i + 1}`,
+        slot: i + 1,
+      }))
+    }
+
     // The draftable pool is this event's field only — golfers not
     // playing never enter the draft.
     const buildItems = async () => {
@@ -80,18 +101,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (action === 'create') {
       if (pool.draftId) return res.status(409).json({ error: 'Draft already created' })
 
-      const entries = await db
-        .select({
-          userId: golfPoolEntries.userId,
-          createdAt: golfPoolEntries.createdAt,
-          displayName: users.displayName,
-          email: users.email,
-        })
-        .from(golfPoolEntries)
-        .innerJoin(users, eq(golfPoolEntries.userId, users.id))
-        .where(eq(golfPoolEntries.poolId, pool.id))
-        .orderBy(golfPoolEntries.createdAt)
-      if (entries.length < 2) {
+      const participants = await buildParticipants()
+      if (participants.length < 2) {
         return res.status(400).json({ error: 'Need at least 2 entries before drafting' })
       }
 
@@ -113,14 +124,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         pickSeconds: pool.draftPickSeconds,
         slowPickHours: 12,
         createdBy: userId,
-        // Join order becomes draft order; the owner can still reorder in
-        // the lobby before starting.
-        participants: entries.map((e, i) => ({
-          userId: e.userId,
-          email: e.email,
-          teamName: e.displayName || `Team ${i + 1}`,
-          slot: i + 1,
-        })),
+        participants,
         items,
       })
 
@@ -139,7 +143,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ ok: true, items: items.length })
     }
 
-    if (action === 'start' || action === 'pause' || action === 'resume') {
+    if (action === 'start') {
+      // Anyone who joined since the draft was created gets a slot.
+      const participants = await buildParticipants()
+      if (participants.length < 2) {
+        return res.status(400).json({ error: 'Need at least 2 entries before drafting' })
+      }
+      await controlDraft(pool.draftId, { action: 'set_participants', participants })
+      const result = await controlDraft(pool.draftId, { action: 'start' })
+      return res.status(200).json(result)
+    }
+
+    if (action === 'pause' || action === 'resume') {
       const result = await controlDraft(pool.draftId, { action })
       return res.status(200).json(result)
     }
