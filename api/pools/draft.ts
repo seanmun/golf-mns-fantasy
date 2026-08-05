@@ -144,12 +144,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (action === 'start') {
-      // Anyone who joined since the draft was created gets a slot.
+      // Everything the pool owns can change between creating and
+      // starting a draft — who joined, the roster size, the pick clock,
+      // and the event field. Re-send all of it so the draft can never
+      // run on stale settings, then start.
       const participants = await buildParticipants()
       if (participants.length < 2) {
         return res.status(400).json({ error: 'Need at least 2 entries before drafting' })
       }
+      const items = await buildItems()
+      if (items.length === 0) {
+        return res.status(400).json({ error: 'The field for this event has not been published yet' })
+      }
       await controlDraft(pool.draftId, { action: 'set_participants', participants })
+      await controlDraft(pool.draftId, { action: 'set_items', items })
+      await controlDraft(pool.draftId, {
+        action: 'set_config',
+        rounds: pool.rosterSize,
+        pickSeconds: pool.draftPickSeconds,
+        name: `${pool.name} · ${tournament.name}`,
+      })
       const result = await controlDraft(pool.draftId, { action: 'start' })
       return res.status(200).json(result)
     }

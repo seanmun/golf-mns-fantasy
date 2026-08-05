@@ -3,6 +3,7 @@ import { db } from '../_db.js'
 import { verifyAuth, isAdmin } from '../_middleware.js'
 import { golfPools, golfTournaments, golfPoolEntries } from '../../src/lib/db/schema.js'
 import { eq, count } from 'drizzle-orm'
+import { getDraftState } from '../_draftService.js'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'DELETE') return handleDelete(req, res)
@@ -113,6 +114,22 @@ async function handleUpdate(req: VercelRequest, res: VercelResponse) {
     if (!pool) return res.status(404).json({ error: 'Pool not found' })
     if (pool.createdBy !== userId && !isAdmin(userId)) {
       return res.status(403).json({ error: 'Forbidden' })
+    }
+
+    // Roster size sets the number of draft rounds. Once a draft is
+    // running the board is fixed, so this can only change beforehand —
+    // start re-sends it to the draft service.
+    if (rosterSize !== undefined && rosterSize !== pool.rosterSize && pool.draftId) {
+      try {
+        const state = (await getDraftState(pool.draftId)) as { draft: { status: string } }
+        if (state.draft.status !== 'setup') {
+          return res
+            .status(400)
+            .json({ error: 'Picks per team cannot change once the draft has started' })
+        }
+      } catch {
+        // Draft service unreachable — allow the edit rather than block.
+      }
     }
 
     const updates: Record<string, any> = { updatedAt: new Date() }
