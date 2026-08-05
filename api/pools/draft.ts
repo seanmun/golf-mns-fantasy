@@ -186,6 +186,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json(result)
     }
 
+    // Start over: clear the board and any rosters it wrote, then
+    // re-sync everything so the next start uses current settings.
+    if (action === 'restart') {
+      await controlDraft(pool.draftId, { action: 'reset' })
+      await db
+        .update(golfPoolEntries)
+        .set({ golferIds: [], submittedAt: null, updatedAt: new Date() })
+        .where(eq(golfPoolEntries.poolId, pool.id))
+      const participants = await buildParticipants()
+      const items = await buildItems()
+      if (participants.length >= 2) {
+        await controlDraft(pool.draftId, { action: 'set_participants', participants })
+      }
+      if (items.length > 0) {
+        await controlDraft(pool.draftId, { action: 'set_items', items })
+      }
+      await controlDraft(pool.draftId, {
+        action: 'set_config',
+        rounds: pool.rosterSize,
+        pickSeconds: pool.draftPickSeconds,
+        name: `${pool.name} · ${tournament.name}`,
+      })
+      return res.status(200).json({ ok: true, participants: participants.length, items: items.length })
+    }
+
     if (action === 'pause' || action === 'resume') {
       const result = await controlDraft(pool.draftId, { action })
       return res.status(200).json(result)

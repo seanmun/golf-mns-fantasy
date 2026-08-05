@@ -363,6 +363,24 @@ export function PoolDraft() {
               Resume
             </button>
           )}
+          {isOwner && draft.status !== 'setup' && (
+            <button
+              onClick={() => {
+                if (
+                  window.confirm(
+                    'Restart the draft? Every pick is cleared and the board is rebuilt with current settings.'
+                  )
+                ) {
+                  void poolAction('restart').then(() => window.location.reload())
+                }
+              }}
+              disabled={busy}
+              className="px-3 py-1.5 rounded-lg text-xs border"
+              style={{ borderColor: 'var(--color-score-bogey)', color: 'var(--color-score-bogey)' }}
+            >
+              Restart
+            </button>
+          )}
           {isOwner && draft.status === 'complete' && (
             <button
               onClick={() => poolAction('sync')}
