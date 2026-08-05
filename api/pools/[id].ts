@@ -161,6 +161,17 @@ async function handleUpdate(req: VercelRequest, res: VercelResponse) {
 
     await db.update(golfPools).set(updates).where(eq(golfPools.id, pool.id))
 
+    // Push settings straight to a draft that hasn't started, so the
+    // draft room never shows stale values between edit and start.
+    if (pool.draftId && (rosterSize !== undefined || name !== undefined)) {
+      await controlDraft(pool.draftId, {
+        action: 'set_config',
+        ...(rosterSize !== undefined ? { rounds: rosterSize } : {}),
+      }).catch(() => {
+        /* draft already started, or service down — start re-sends it */
+      })
+    }
+
     return res.status(200).json({ success: true })
   } catch (error) {
     console.error('PUT /api/pools/[id] error:', error)
