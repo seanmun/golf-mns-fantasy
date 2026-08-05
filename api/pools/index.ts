@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { db } from '../_db.js'
 import { verifyAuth } from '../_middleware.js'
+import { ensureUser } from '../_ensureUser.js'
 import { golfPools, golfTournaments, golfPoolEntries } from '../../src/lib/db/schema.js'
 import { eq, and, count } from 'drizzle-orm'
 
@@ -67,6 +68,7 @@ async function createPool(req: VercelRequest, res: VercelResponse) {
   try {
     const userId = await verifyAuth(req)
     if (!userId) return res.status(401).json({ error: 'Unauthorized' })
+    await ensureUser(userId)
 
     const {
       name,
