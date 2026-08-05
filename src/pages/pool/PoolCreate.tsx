@@ -233,13 +233,20 @@ export function PoolCreate() {
               className="w-full px-3 py-2.5 rounded-lg border text-sm outline-none"
               style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)', color: 'var(--color-text-primary)' }}
             >
-              <option value="60">Timed — 1 minute per pick</option>
-              <option value="120">Timed — 2 minutes per pick</option>
-              <option value="300">Timed — 5 minutes per pick</option>
-              <option value="slow">Slow draft — 12 hours, emailed when you're up</option>
+              <option value="60">1 minute per pick</option>
+              <option value="120">2 minutes per pick</option>
+              <option value="300">5 minutes per pick</option>
+              <option value="900">15 minutes per pick</option>
+              <option value="3600">1 hour per pick</option>
+              <option value="7200">2 hours per pick</option>
+              <option value="14400">4 hours per pick</option>
+              <option value="28800">8 hours per pick</option>
+              <option value="slow">12 hours per pick (slow draft)</option>
+              <option value="86400">24 hours per pick</option>
             </select>
             <p className="mt-1.5 text-xs" style={{ color: 'var(--color-text-muted)' }}>
-              Miss the clock and the best available golfer is picked for you.
+              Everyone is emailed when they're up. Miss the clock and your queue —
+              or the best available golfer — is picked for you.
             </p>
           </div>
         )}
