@@ -2,12 +2,24 @@
 // Golf owns pools and rosters; the hub owns draft order, the clock and
 // picks. See project-shared-engines in memory.
 
-const HUB = process.env.PLATFORM_API_URL || 'https://mnsfantasy.com'
+// Defaulting to the live hub is fine in production and dangerous
+// anywhere else: a draft started from a dev machine would mutate the
+// real one, even with DATABASE_URL pointed at a branch (drafts live in
+// the hub, not golf's DB). Outside production, demand it explicitly.
+function hubUrl(): string {
+  const explicit = process.env.PLATFORM_API_URL
+  if (explicit) return explicit
+  if (process.env.VERCEL_ENV === 'production') return 'https://mnsfantasy.com'
+  throw new Error(
+    'PLATFORM_API_URL is not set. Refusing to fall back to the production ' +
+      'draft service outside production — set it in .env.local.'
+  )
+}
 
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
   const secret = process.env.DRAFT_SERVICE_SECRET
   if (!secret) throw new Error('DRAFT_SERVICE_SECRET not configured')
-  const res = await fetch(`${HUB}/api/draft${path}`, {
+  const res = await fetch(`${hubUrl()}/api/draft${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
