@@ -3,7 +3,7 @@ import { db } from '../_db.js'
 import { verifyAuth } from '../_middleware.js'
 import { ensureUser } from '../_ensureUser.js'
 import { golfPools, golfTournaments, golfPoolEntries } from '../../src/lib/db/schema.js'
-import { eq, and, count } from 'drizzle-orm'
+import { eq, count } from 'drizzle-orm'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'GET') return getPools(req, res)

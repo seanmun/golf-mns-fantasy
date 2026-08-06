@@ -3,7 +3,6 @@ import { db } from '../_db.js'
 import { verifyAuth } from '../_middleware.js'
 import { createClerkClient } from '@clerk/backend'
 import { users } from '../../src/lib/db/schema.js'
-import { eq } from 'drizzle-orm'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })

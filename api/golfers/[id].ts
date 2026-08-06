@@ -50,7 +50,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const tournaments: any[] = []
     for (const yr of [season, season - 1]) {
       const r = await fetch(`${baseUrl}/Tournaments/${yr}?key=${apiKey}`)
-      if (r.ok) tournaments.push(...(await r.json()))
+      if (r.ok) tournaments.push(...((await r.json()) as any[]))
       if (tournaments.filter((t: any) => t.IsOver).length >= 5) break
     }
 
@@ -71,7 +71,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           console.log(`Leaderboard ${t.TournamentID} (${t.Name}) returned ${lbRes.status}`)
           continue
         }
-        const lbData = await lbRes.json()
+        const lbData = (await lbRes.json()) as any
         const player = lbData.Players?.find(
           (p: any) => String(p.PlayerID) === golfer.externalId
         )
