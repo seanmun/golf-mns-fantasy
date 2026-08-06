@@ -6,6 +6,8 @@ import { eq, and, count } from 'drizzle-orm'
 import { getDraftState } from '../_draftService.js'
 import { ensureUser } from '../_ensureUser.js'
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // GET ?joinCode= — what the join page shows before anyone commits.
   if (req.method === 'GET') {
@@ -54,16 +56,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const userId = await verifyAuth(req)
     if (!userId) return res.status(401).json({ error: 'Unauthorized' })
 
-    const { joinCode } = req.body
-    if (!joinCode) return res.status(400).json({ error: 'joinCode is required' })
+    // Two ways in: a join code (private pools, share links) or a pool id
+    // (the public browse list, where the code is nobody's business).
+    const { joinCode, poolId } = req.body ?? {}
+    if (!joinCode && !poolId) {
+      return res.status(400).json({ error: 'joinCode or poolId is required' })
+    }
+    if (poolId && !UUID_RE.test(String(poolId))) {
+      return res.status(400).json({ error: 'Invalid pool id' })
+    }
 
-    const [pool] = await db
-      .select()
-      .from(golfPools)
-      .where(eq(golfPools.joinCode, joinCode.toUpperCase()))
-      .limit(1)
+    const [pool] = poolId
+      ? await db.select().from(golfPools).where(eq(golfPools.id, String(poolId))).limit(1)
+      : await db
+          .select()
+          .from(golfPools)
+          .where(eq(golfPools.joinCode, String(joinCode).toUpperCase()))
+          .limit(1)
 
     if (!pool) return res.status(404).json({ error: 'Pool not found' })
+    // A private pool is only joinable by someone holding its code.
+    if (poolId && !pool.isPublic) {
+      return res.status(403).json({ error: 'This pool is private — you need its join code' })
+    }
     if (pool.status === 'cancelled') return res.status(400).json({ error: 'Pool is cancelled' })
     if (pool.status === 'completed') return res.status(400).json({ error: 'Pool is already completed' })
 

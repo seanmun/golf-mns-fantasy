@@ -2,12 +2,16 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { Users, Globe } from 'lucide-react'
+import { useUser } from '@clerk/clerk-react'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { useApi } from '@/lib/api/client'
 
 export function PoolBrowse() {
   const [joinCode, setJoinCode] = useState('')
   const navigate = useNavigate()
+  const { isSignedIn } = useUser()
+  const { apiFetch } = useApi()
 
   const { data, isLoading } = useQuery({
     queryKey: ['pools'],
@@ -18,9 +22,21 @@ export function PoolBrowse() {
     },
   })
 
+  // Which of these you're already in, so the list says "Joined" instead
+  // of sending you to a page to find out.
+  const { data: mine } = useQuery({
+    queryKey: ['pools-mine'],
+    enabled: !!isSignedIn,
+    queryFn: () => apiFetch('/api/pools/mine') as Promise<{ pools: Array<{ id: string }> }>,
+  })
+  const joinedIds = new Set((mine?.pools ?? []).map((p) => p.id))
+
   if (isLoading) return <LoadingSpinner />
 
-  const pools = data?.pools || []
+  // A finished or cancelled pool isn't browsable inventory.
+  const pools = (data?.pools || []).filter(
+    (p: any) => p.status !== 'completed' && p.status !== 'cancelled'
+  )
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-12">
@@ -86,7 +102,14 @@ export function PoolBrowse() {
                   style={{ color: 'var(--color-text-primary)' }}>
                   {pool.name}
                 </h3>
-                <Globe size={14} style={{ color: 'var(--color-text-muted)' }} />
+                {joinedIds.has(pool.id) ? (
+                  <span className="px-2 py-0.5 rounded-full text-xs whitespace-nowrap"
+                    style={{ background: 'var(--color-green-dim)', color: 'var(--color-green-primary)', border: '1px solid var(--color-green-muted)' }}>
+                    JOINED
+                  </span>
+                ) : (
+                  <Globe size={14} style={{ color: 'var(--color-text-muted)' }} />
+                )}
               </div>
               <p className="text-xs mb-4" style={{ color: 'var(--color-text-secondary)' }}>
                 {pool.tournamentName} · {pool.tournamentCourse}

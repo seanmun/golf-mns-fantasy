@@ -1,5 +1,6 @@
-import { useQuery } from '@tanstack/react-query'
-import { useParams, Link } from 'react-router-dom'
+import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useParams, Link, useLocation } from 'react-router-dom'
 import { useUser } from '@clerk/clerk-react'
 import { Copy, Users, ChevronRight, Share2, CheckCircle, Circle, Settings } from 'lucide-react'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
@@ -8,8 +9,12 @@ import { toast } from 'sonner'
 
 export function PoolDetail() {
   const { poolId } = useParams<{ poolId: string }>()
-  const { user } = useUser()
+  const { user, isSignedIn } = useUser()
   const { apiFetch } = useApi()
+  const location = useLocation()
+  const qc = useQueryClient()
+  const [joining, setJoining] = useState(false)
+  const [joinError, setJoinError] = useState<string | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['pool', poolId],
@@ -25,6 +30,38 @@ export function PoolDetail() {
   const isLocked = pool.status === 'locked' || pool.status === 'active' || new Date() >= new Date(pool.tournamentLockTime)
   const hasPicks = userEntry && (userEntry.golferIds as string[]).length > 0
   const isOwner = user?.id === pool.createdBy
+  const isMember = !!userEntry
+  const isFull = pool.maxEntries != null && entryCount >= pool.maxEntries
+  // Why a visitor can't join, in the same order the server rejects them.
+  const blockedReason =
+    pool.status === 'cancelled'
+      ? 'This pool was cancelled.'
+      : pool.status === 'completed'
+        ? 'This pool is finished.'
+        : isLocked
+          ? 'This event has already started.'
+          : isFull
+            ? 'This pool is full.'
+            : null
+
+  async function join() {
+    setJoining(true)
+    setJoinError(null)
+    try {
+      await apiFetch('/api/pools/join', {
+        method: 'POST',
+        body: JSON.stringify({ poolId }),
+      })
+      toast.success("You're in")
+      // Re-read rather than navigate: the page becomes the member view.
+      await qc.invalidateQueries({ queryKey: ['pool', poolId] })
+      await qc.invalidateQueries({ queryKey: ['pool-members', poolId] })
+    } catch (err: any) {
+      setJoinError(err.message || 'Could not join this pool')
+    } finally {
+      setJoining(false)
+    }
+  }
 
   function copyJoinCode() {
     navigator.clipboard.writeText(pool.joinCode)
@@ -98,29 +135,73 @@ export function PoolDetail() {
         )}
       </div>
 
+      {/* Join — for anyone who isn't in the pool yet, this is the whole
+          point of the page. Without it a public pool is a dead end. */}
+      {!isMember && (
+        <div
+          className="rounded-xl border p-5 mb-8"
+          style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}
+        >
+          {blockedReason ? (
+            <p className="text-sm" style={{ color: 'var(--color-text-muted)' }}>{blockedReason}</p>
+          ) : isSignedIn ? (
+            <>
+              <button
+                onClick={join}
+                disabled={joining}
+                className="px-6 py-3 rounded-lg font-medium text-sm disabled:opacity-50"
+                style={{ background: 'var(--color-green-primary)', color: '#000' }}
+              >
+                {joining ? 'Joining…' : 'Join Pool'}
+              </button>
+              <p className="text-xs mt-3" style={{ color: 'var(--color-text-muted)' }}>
+                Pick {pool.rosterSize} golfers · {pool.pickMode === 'draft' ? 'Snake draft' : "Pick'em"}
+              </p>
+              {joinError && (
+                <p className="text-sm mt-3" style={{ color: 'var(--color-score-bogey)' }}>{joinError}</p>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="text-sm mb-3" style={{ color: 'var(--color-text-secondary)' }}>
+                Sign in to join this pool.
+              </p>
+              <Link
+                to={`/sign-in?redirect_url=${encodeURIComponent(location.pathname)}`}
+                className="inline-block px-6 py-3 rounded-lg font-medium text-sm"
+                style={{ background: 'var(--color-green-primary)', color: '#000' }}
+              >
+                Sign in to join
+              </Link>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Actions */}
       <div className="flex flex-wrap gap-3 mb-10">
-        {pool.pickMode === 'draft' ? (
-          <Link
-            to={`/pools/${poolId}/draft`}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium text-sm"
-            style={{ background: 'var(--color-green-primary)', color: '#000' }}
-          >
-            {pool.draftId ? 'Draft Room' : 'Set Up Draft'}
-            <ChevronRight size={14} />
-          </Link>
-        ) : (
-          !isLocked && (
+        {isMember &&
+          (pool.pickMode === 'draft' ? (
             <Link
-              to={`/pools/${poolId}/pick`}
+              to={`/pools/${poolId}/draft`}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium text-sm"
               style={{ background: 'var(--color-green-primary)', color: '#000' }}
             >
-              {hasPicks ? 'Edit Picks' : 'Make Picks'}
+              {pool.draftId ? 'Draft Room' : 'Set Up Draft'}
               <ChevronRight size={14} />
             </Link>
-          )
-        )}
+          ) : (
+            !isLocked && (
+              <Link
+                to={`/pools/${poolId}/pick`}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium text-sm"
+                style={{ background: 'var(--color-green-primary)', color: '#000' }}
+              >
+                {hasPicks ? 'Edit Picks' : 'Make Picks'}
+                <ChevronRight size={14} />
+              </Link>
+            )
+          ))}
         <Link
           to={`/pools/${poolId}/leaderboard`}
           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium text-sm border"

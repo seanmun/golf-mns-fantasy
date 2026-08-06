@@ -61,7 +61,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       userEntry = entries.find((e) => e.userId === userId) || null
     }
 
-    return res.status(200).json({ pool, entryCount: entryCount || 0, userEntry })
+    // The join code is the key to a private pool — only the owner and
+    // people already in it get to see one.
+    const canSeeJoinCode = !!userId && (userId === pool.createdBy || !!userEntry)
+    return res.status(200).json({
+      pool: { ...pool, joinCode: canSeeJoinCode ? pool.joinCode : null },
+      entryCount: entryCount || 0,
+      userEntry,
+    })
   } catch (error) {
     console.error('GET /api/pools/[id] error:', error)
     return res.status(500).json({ error: 'Internal server error' })

@@ -54,7 +54,9 @@ export default function App() {
         <Route path="/players/:id" element={<PlayerCard />} />
         <Route path="/pools" element={<PoolBrowse />} />
         <Route path="/pools/create" element={<ProtectedRoute><PoolCreate /></ProtectedRoute>} />
-        <Route path="/pools/join/:joinCode" element={<ProtectedRoute><PoolJoin /></ProtectedRoute>} />
+        {/* Public on purpose: an invite has to show what you were invited
+            to BEFORE it asks you to sign in, or the link is a bounce. */}
+        <Route path="/pools/join/:joinCode" element={<PoolJoin />} />
         <Route path="/pools/:poolId" element={<PoolDetail />} />
         <Route path="/pools/:poolId/pick" element={<ProtectedRoute><PoolPick /></ProtectedRoute>} />
         <Route path="/pools/:poolId/manage" element={<ProtectedRoute><PoolManage /></ProtectedRoute>} />

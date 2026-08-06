@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import { useUser } from '@clerk/clerk-react'
 import { useApi } from '@/lib/api/client'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { toast } from 'sonner'
@@ -8,9 +9,15 @@ import { toast } from 'sonner'
 // Shows the pool and waits for a deliberate tap. This used to join
 // silently on mount, so a failure surfaced as a toast with nothing to
 // retry — and you couldn't see what you were joining.
+//
+// The page is reachable signed out: the preview endpoint is public, and
+// an invite that bounces you to a login screen before it says what the
+// invite IS gets abandoned. Auth is asked for at the Join tap.
 export function PoolJoin() {
   const { joinCode } = useParams<{ joinCode: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
+  const { isSignedIn } = useUser()
   const { apiFetch } = useApi()
   const [joining, setJoining] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -109,6 +116,23 @@ export function PoolJoin() {
             style={{ background: 'var(--color-green-primary)', color: '#000' }}
           >
             Go to pool
+          </Link>
+        </>
+      ) : !isSignedIn ? (
+        <>
+          <Link
+            to={`/sign-up?redirect_url=${encodeURIComponent(location.pathname)}`}
+            className="block w-full py-3 rounded-lg font-medium text-sm text-center"
+            style={{ background: 'var(--color-green-primary)', color: '#000' }}
+          >
+            Sign up to join
+          </Link>
+          <Link
+            to={`/sign-in?redirect_url=${encodeURIComponent(location.pathname)}`}
+            className="block w-full py-3 mt-3 rounded-lg font-medium text-sm text-center border"
+            style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}
+          >
+            Already have an account? Sign in
           </Link>
         </>
       ) : (
