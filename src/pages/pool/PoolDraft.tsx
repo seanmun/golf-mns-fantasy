@@ -514,6 +514,18 @@ export function PoolDraft() {
                         className="px-1 disabled:opacity-20" style={{ color: 'var(--color-text-muted)' }}>↑</button>
                       <button onClick={() => moveQueued(i, 1)} disabled={i === queue.length - 1}
                         className="px-1 disabled:opacity-20" style={{ color: 'var(--color-text-muted)' }}>↓</button>
+                      {/* Take them straight from the queue — on mobile the
+                          field list is a whole tab away. */}
+                      {draft.status === 'active' && !gone && (
+                        <button
+                          onClick={() => pick(itemId)}
+                          disabled={busy || !state.isMyTurn}
+                          className="px-2 py-1 rounded text-[11px] font-medium disabled:opacity-30"
+                          style={{ background: 'var(--color-green-primary)', color: '#000' }}
+                        >
+                          Draft
+                        </button>
+                      )}
                       <button onClick={() => toggleQueued(itemId)} className="px-1"
                         style={{ color: 'var(--color-score-bogey)' }}>×</button>
                     </li>
