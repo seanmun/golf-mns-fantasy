@@ -17,11 +17,12 @@ type Db = NeonHttpDatabase<any>
 // default. Returns the number of golfers updated.
 export async function recomputeSeasonStats(db: Db, season: number): Promise<number> {
   const tournaments = await db
-    .select({ id: golfTournaments.id })
+    .select({ id: golfTournaments.id, cutApplied: golfTournaments.cutApplied })
     .from(golfTournaments)
     .where(eq(golfTournaments.season, season))
   if (tournaments.length === 0) return 0
   const tournamentIds = tournaments.map((t) => t.id)
+  const cutAppliedBy = new Map(tournaments.map((t) => [t.id, t.cutApplied]))
 
   const results = await db
     .select()
@@ -38,7 +39,12 @@ export async function recomputeSeasonStats(db: Db, season: number): Promise<numb
   let updated = 0
   for (const [golferId, rs] of byGolfer) {
     const fpts = rs.reduce(
-      (sum, r) => sum + calculateGolferPoints(statsFromResult(r), DEFAULT_SCORING),
+      (sum, r) =>
+        sum +
+        calculateGolferPoints(
+          statsFromResult(r, cutAppliedBy.get(r.tournamentId) ?? false),
+          DEFAULT_SCORING
+        ),
       0
     )
     const stats: GolferSeasonStats = {
@@ -46,7 +52,12 @@ export async function recomputeSeasonStats(db: Db, season: number): Promise<numb
       events: rs.length,
       wins: rs.filter((r) => r.position === 1).length,
       top10s: rs.filter((r) => r.position != null && r.position <= 10).length,
-      cutsMade: rs.filter((r) => !r.isCut).length,
+      // Only events that HAD a cut, and only if they survived it —
+      // counting !isCut alone credited a cut made at every no-cut event
+      // and to everyone who withdrew.
+      cutsMade: rs.filter(
+        (r) => (cutAppliedBy.get(r.tournamentId) ?? false) && !r.isCut && !r.isWithdrawn
+      ).length,
       birdies: rs.reduce((s, r) => s + r.birdies, 0),
       eagles: rs.reduce((s, r) => s + r.eagles, 0),
       fpts: Math.round(fpts),

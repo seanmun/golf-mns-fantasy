@@ -1,13 +1,18 @@
 import { eq, inArray } from 'drizzle-orm'
 import type { NeonHttpDatabase } from 'drizzle-orm/neon-http'
 import { golfPools, golfPoolEntries, golfGolferResults } from '../db/schema.js'
-import { poolTournamentIds } from '../db/poolTournaments.js'
+import { poolTournamentRows } from '../db/poolTournaments.js'
 import { calculateGolferPoints, type ScoringConfig, type GolferStats } from './engine.js'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = NeonHttpDatabase<any>
 
-export function statsFromResult(result: typeof golfGolferResults.$inferSelect): GolferStats {
+// cutApplied belongs to the TOURNAMENT, not the result row — it says
+// whether this event's cut has happened at all. Pass it in.
+export function statsFromResult(
+  result: typeof golfGolferResults.$inferSelect,
+  cutApplied: boolean
+): GolferStats {
   return {
     hole_in_ones: result.holeInOnes,
     albatrosses: result.albatrosses,
@@ -18,6 +23,8 @@ export function statsFromResult(result: typeof golfGolferResults.$inferSelect): 
     double_bogeys: result.doubleBogeys,
     worse_than_double: result.worseThanDouble,
     is_cut: result.isCut,
+    is_withdrawn: result.isWithdrawn,
+    cut_applied: cutApplied,
     position: result.position,
   }
 }
@@ -34,7 +41,9 @@ export async function recalculatePool(
 ): Promise<number> {
   const scoringConfig = pool.scoringConfig as ScoringConfig
 
-  const tournamentIds = await poolTournamentIds(db, pool)
+  const events = await poolTournamentRows(db, pool)
+  const tournamentIds = events.map((t) => t.id)
+  const cutAppliedBy = new Map(events.map((t) => [t.id, t.cutApplied]))
   const results = await db
     .select()
     .from(golfGolferResults)
@@ -66,7 +75,10 @@ export async function recalculatePool(
     let totalPoints = 0
     for (const golferId of golferIds) {
       for (const result of byGolfer.get(golferId) ?? []) {
-        totalPoints += calculateGolferPoints(statsFromResult(result), scoringConfig)
+        totalPoints += calculateGolferPoints(
+          statsFromResult(result, cutAppliedBy.get(result.tournamentId) ?? false),
+          scoringConfig
+        )
       }
     }
     return { id: entry.id, totalPoints: String(Math.round(totalPoints * 100) / 100) }

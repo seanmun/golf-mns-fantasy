@@ -1,12 +1,15 @@
-// Creates golf.pool_tournaments and backfills a row for every existing
-// pool. Idempotent — safe to run twice.
+// Every schema change golf needs, as idempotent DDL. Safe to run any
+// number of times — each step is IF NOT EXISTS or ON CONFLICT.
 //
-//   npm run db:multiweek           # dry run: says what it WOULD do
-//   npm run db:multiweek -- --apply
+//   npm run db:migrate           # dry run: says what it WOULD do
+//   npm run db:migrate -- --apply
 //
 // Loads .env.local the same way src/lib/db/seed.ts does. drizzle.config.ts
-// has no dotenv import, so `db:push` is not a reliable way to ship this.
-// This script does the DDL itself and needs no push.
+// has no dotenv import — drizzle-kit only auto-loads `.env`, not
+// `.env.local` — so `db:push` is not a reliable way to ship this, and it
+// cannot backfill rows in any case. This script does both.
+//
+// Add new changes to the bottom rather than writing another one-off.
 
 import { config } from 'dotenv'
 config({ path: '.env.local' })
@@ -39,7 +42,18 @@ async function main() {
     SELECT count(*)::int AS pools FROM golf.pools
   `) as Array<{ pools: number }>
 
+  // The scoring columns added alongside the cut-bonus fix.
+  const [cols] = (await sql`
+    SELECT
+      bool_or(table_name = 'tournaments'    AND column_name = 'cut_applied')  AS cut_applied,
+      bool_or(table_name = 'golfer_results' AND column_name = 'is_withdrawn') AS is_withdrawn
+    FROM information_schema.columns
+    WHERE table_schema = 'golf'
+  `) as Array<{ cut_applied: boolean; is_withdrawn: boolean }>
+
   console.log(`  pool_tournaments table   ${exists ? 'already exists' : 'MISSING — will create'}`)
+  console.log(`  tournaments.cut_applied  ${cols?.cut_applied ? 'already exists' : 'MISSING — will add'}`)
+  console.log(`  results.is_withdrawn     ${cols?.is_withdrawn ? 'already exists' : 'MISSING — will add'}`)
   console.log(`  pools in this database   ${pools}`)
 
   if (exists) {
@@ -103,6 +117,34 @@ async function main() {
     RETURNING id
   `
   console.log(`  ✓ backfilled ${inserted.length} pool(s)`)
+
+  // --- Cut-bonus semantics -------------------------------------------
+  // made_cut_bonus used to pay everyone from round 1, pay withdrawals,
+  // and pay out at no-cut events. These two columns are what let the
+  // engine tell "survived a cut" from "there was never a cut".
+  await sql`
+    ALTER TABLE golf.tournaments
+      ADD COLUMN IF NOT EXISTS cut_applied boolean NOT NULL DEFAULT false
+  `
+  await sql`
+    ALTER TABLE golf.golfer_results
+      ADD COLUMN IF NOT EXISTS is_withdrawn boolean NOT NULL DEFAULT false
+  `
+  console.log('  ✓ cut_applied / is_withdrawn columns')
+
+  // Past events: anyone recorded as cut proves that event had a cut and
+  // it landed, so back-date the flag rather than leaving history wrong.
+  const backdated = await sql`
+    UPDATE golf.tournaments t
+    SET cut_applied = true
+    WHERE cut_applied = false
+      AND EXISTS (
+        SELECT 1 FROM golf.golfer_results r
+        WHERE r.tournament_id = t.id AND r.is_cut = true
+      )
+    RETURNING t.id
+  `
+  console.log(`  ✓ back-dated cut_applied on ${backdated.length} past event(s)`)
 
   // Verify rather than assume.
   const [{ missing }] = (await sql`

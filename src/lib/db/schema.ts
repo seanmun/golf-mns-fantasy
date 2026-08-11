@@ -43,6 +43,11 @@ export const golfTournaments = golfSchema.table('tournaments', {
   // "America/Chicago"). All day-boundary and sync-window decisions are
   // made in THIS timezone, never UTC — see api/cron/sync-all.ts.
   timeZone: text('time_zone'),
+  // Flips true the first time the leaderboard reports anyone as cut,
+  // which is the only observable proof this event HAS a cut and that it
+  // has happened. Gates made_cut_bonus: false through rounds 1–2, and
+  // false forever at no-cut events like the FedEx playoffs.
+  cutApplied: boolean('cut_applied').notNull().default(false),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
 
@@ -109,6 +114,9 @@ export const golfGolferResults = golfSchema.table('golfer_results', {
   totalScore: integer('total_score'),
   position: integer('position'),
   isCut: boolean('is_cut').notNull().default(false),
+  // Tracked on tournament_field too, but scoring reads THIS table — so
+  // without a copy here a withdrawal still collected the cut bonus.
+  isWithdrawn: boolean('is_withdrawn').notNull().default(false),
   holeInOnes: integer('hole_in_ones').notNull().default(0),
   albatrosses: integer('albatrosses').notNull().default(0),
   eagles: integer('eagles').notNull().default(0),
@@ -149,6 +157,10 @@ export const golfPools = golfSchema.table('pools', {
   draftPickSeconds: integer('draft_pick_seconds'),
   // Set once the draft has been created in the hub's draft service.
   draftId: uuid('draft_id'),
+  // Frozen into each pool at creation, so changing this default never
+  // rescores a pool that already exists. Must stay in step with
+  // DEFAULT_SCORING in src/lib/scoring/engine.ts, which is what the UI
+  // falls back to when rendering.
   scoringConfig: jsonb('scoring_config').notNull().default({
     hole_in_one: 15,
     albatross: 12,
@@ -159,7 +171,14 @@ export const golfPools = golfSchema.table('pools', {
     double_bogey: -3,
     worse_than_double: -5,
     made_cut_bonus: 2,
-    position_bonuses: { '1': 20, '2': 12, '3': 8, '4': 5, '5': 3 },
+    position_bonuses: {
+      '1': 30, '2': 20, '3': 15, '4': 12, '5': 10,
+      '6': 9, '7': 8, '8': 7, '9': 6, '10': 5,
+      '11': 3, '12': 3, '13': 3, '14': 3, '15': 3,
+      '16': 2, '17': 2, '18': 2, '19': 2, '20': 2,
+      '21': 1, '22': 1, '23': 1, '24': 1, '25': 1,
+      '26': 1, '27': 1, '28': 1, '29': 1, '30': 1,
+    },
   }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),

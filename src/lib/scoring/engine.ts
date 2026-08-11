@@ -11,6 +11,17 @@ export interface ScoringConfig {
   position_bonuses: Record<string, number>
 }
 
+// Placement pays down to 30th. Ties take the FULL value, not a split —
+// parsePosition maps "T3" to 3, so a five-way T3 is +15 each.
+export const DEFAULT_POSITION_BONUSES: Record<string, number> = {
+  '1': 30, '2': 20, '3': 15, '4': 12, '5': 10,
+  '6': 9, '7': 8, '8': 7, '9': 6, '10': 5,
+  '11': 3, '12': 3, '13': 3, '14': 3, '15': 3,
+  '16': 2, '17': 2, '18': 2, '19': 2, '20': 2,
+  '21': 1, '22': 1, '23': 1, '24': 1, '25': 1,
+  '26': 1, '27': 1, '28': 1, '29': 1, '30': 1,
+}
+
 export const DEFAULT_SCORING: ScoringConfig = {
   hole_in_one: 15,
   albatross: 12,
@@ -21,7 +32,7 @@ export const DEFAULT_SCORING: ScoringConfig = {
   double_bogey: -3,
   worse_than_double: -5,
   made_cut_bonus: 2,
-  position_bonuses: { '1': 20, '2': 12, '3': 8, '4': 5, '5': 3 },
+  position_bonuses: DEFAULT_POSITION_BONUSES,
 }
 
 export interface GolferStats {
@@ -34,6 +45,13 @@ export interface GolferStats {
   double_bogeys: number
   worse_than_double: number
   is_cut: boolean
+  is_withdrawn: boolean
+  // Whether this tournament's cut has actually happened. Without it the
+  // "made cut" bonus paid every golfer from round 1 and clawed it back
+  // on Friday, paid withdrawals, and paid out in full at no-cut events
+  // like the playoffs — where nobody can make a cut because there isn't
+  // one. See cutApplied on golf.tournaments.
+  cut_applied: boolean
   position: number | null
 }
 
@@ -49,7 +67,8 @@ export function calculateGolferPoints(stats: GolferStats, config: ScoringConfig)
   points += stats.double_bogeys * config.double_bogey
   points += stats.worse_than_double * config.worse_than_double
 
-  if (!stats.is_cut) {
+  // Only once there IS a cut, and only for someone who survived it.
+  if (stats.cut_applied && !stats.is_cut && !stats.is_withdrawn) {
     points += config.made_cut_bonus
   }
 

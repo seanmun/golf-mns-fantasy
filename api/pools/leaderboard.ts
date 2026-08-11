@@ -82,6 +82,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         endDate: t.endDate,
         timeZone: t.timeZone,
         lastSyncedAt: t.lastSyncedAt,
+        // The UI recomputes points client-side, so it needs the same
+        // cut state the server scored with or the two will disagree.
+        cutApplied: t.cutApplied,
       })),
       // The first event — what the page header and sync line described
       // before pools could span more than one.

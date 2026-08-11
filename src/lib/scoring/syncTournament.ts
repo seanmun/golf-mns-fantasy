@@ -165,6 +165,9 @@ export async function syncTournament(
       totalScore: row.total === 'E' ? 0 : (num(row.total) ?? null),
       position: parsePosition(row.position),
       isCut,
+      // Scoring reads this table, not tournament_field — a WD that isn't
+      // copied here still collects the made-cut bonus.
+      isWithdrawn,
       updatedAt: now,
     }
 
@@ -234,10 +237,18 @@ export async function syncTournament(
   if (lb.status === 'Official') newStatus = 'completed'
   else if (lb.status !== 'Not Started') newStatus = 'active'
 
+  // Anyone reported cut is proof this event has a cut AND that it has
+  // landed. Latches on and never unlatches: positions churn every sync
+  // and the bonus must not flicker off once earned. Stays false all week
+  // at a no-cut event, which is what stops the playoffs paying it.
+  const cutApplied =
+    tournament.cutApplied || lb.leaderboardRows.some((r) => r.status === 'cut')
+
   await db
     .update(golfTournaments)
     .set({
       status: newStatus,
+      cutApplied,
       lastSyncedAt: now,
       ...(opts.withScorecards ? { lastFullSyncAt: now } : {}),
     })

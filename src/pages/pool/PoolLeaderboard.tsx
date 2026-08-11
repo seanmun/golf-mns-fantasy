@@ -127,7 +127,7 @@ function roundPoints(entry: any, config: ScoringConfig, tournamentId: string): R
   return totals
 }
 
-function golferPoints(results: any, config: ScoringConfig): number {
+function golferPoints(results: any, config: ScoringConfig, cutApplied: boolean): number {
   return calculateGolferPoints(
     {
       hole_in_ones: results.holeInOnes,
@@ -139,28 +139,42 @@ function golferPoints(results: any, config: ScoringConfig): number {
       double_bogeys: results.doubleBogeys,
       worse_than_double: results.worseThanDouble,
       is_cut: results.isCut,
+      is_withdrawn: !!results.isWithdrawn,
+      cut_applied: cutApplied,
       position: results.position,
     },
     config
   )
 }
 
-// A team's points from one event only.
-function entryPointsForEvent(entry: any, config: ScoringConfig, tournamentId: string): number {
+// A team's points from one event only. Takes the tournament, not its id,
+// because the cut state lives on it — typed so passing an id is a
+// compile error rather than a silent zero.
+interface EventRef {
+  id: string
+  cutApplied?: boolean
+}
+
+function entryPointsForEvent(entry: any, config: ScoringConfig, tournament: EventRef): number {
   let total = 0
   for (const g of entry.golfers ?? []) {
-    const results = g.byTournament?.[tournamentId]
-    if (results) total += golferPoints(results, config)
+    const results = g.byTournament?.[tournament.id]
+    if (results) total += golferPoints(results, config, !!tournament.cutApplied)
   }
   return Math.round(total * 100) / 100
 }
 
 // A golfer's points across every event they played in this pool.
-function golferTotal(byTournament: Record<string, any>, config: ScoringConfig): number {
-  const total = Object.values(byTournament ?? {}).reduce(
-    (s: number, r: any) => s + golferPoints(r, config),
-    0
-  )
+function golferTotal(
+  byTournament: Record<string, any>,
+  config: ScoringConfig,
+  tournaments: EventRef[]
+): number {
+  let total = 0
+  for (const t of tournaments) {
+    const r = byTournament?.[t.id]
+    if (r) total += golferPoints(r, config, !!t.cutApplied)
+  }
   return Math.round(total * 100) / 100
 }
 
@@ -207,7 +221,15 @@ function holeColor(score: number, par: number) {
 
 // Every point a golfer earned at ONE event, attributed: hole scoring per
 // round, plus that event's bonuses (made cut, finish position).
-function PointsBreakdown({ results, config }: { results: any; config: ScoringConfig }) {
+function PointsBreakdown({
+  results,
+  config,
+  cutApplied,
+}: {
+  results: any
+  config: ScoringConfig
+  cutApplied: boolean
+}) {
   const rounds: Array<{ round: number; holes: Record<string, { score: number; par: number }> }> =
     results?.scorecards ?? []
   const perRound = rounds.map((r) => ({
@@ -215,7 +237,10 @@ function PointsBreakdown({ results, config }: { results: any; config: ScoringCon
     pts: pointsFromHoles(Object.values(r.holes ?? {}), config),
   }))
   const holeTotal = perRound.reduce((s, r) => s + r.pts, 0)
-  const cutBonus = results && !results.isCut ? config.made_cut_bonus : 0
+  // Mirrors calculateGolferPoints exactly — if these drift, the
+  // breakdown stops adding up to the total shown above it.
+  const cutBonus =
+    cutApplied && results && !results.isCut && !results.isWithdrawn ? config.made_cut_bonus : 0
   const finishBonus =
     results?.position != null ? (config.position_bonuses?.[String(results.position)] ?? 0) : 0
   const total = Math.round((holeTotal + cutBonus + finishBonus) * 100) / 100
@@ -434,7 +459,7 @@ export function PoolLeaderboard() {
                           {t.name}
                         </span>
                         <span className="text-xs font-mono" style={{ color: played ? 'var(--color-green-primary)' : 'var(--color-text-muted)' }}>
-                          {played ? `${entryPointsForEvent(entry, config, t.id)} pts` : 'not started'}
+                          {played ? `${entryPointsForEvent(entry, config, t)} pts` : 'not started'}
                         </span>
                       </div>
                       {played && <RoundStrip rp={rp} />}
@@ -481,7 +506,7 @@ export function PoolLeaderboard() {
                             )}
                           </span>
                           {playedIn.length > 0 ? (
-                            <ScoreBadge score={golferTotal(byTournament, config)} />
+                            <ScoreBadge score={golferTotal(byTournament, config, tournaments)} />
                           ) : (
                             <span className="text-xs font-mono" style={{ color: 'var(--color-text-muted)' }}>-</span>
                           )}
@@ -502,7 +527,7 @@ export function PoolLeaderboard() {
                                         {t.name}
                                       </div>
                                     )}
-                                    <PointsBreakdown results={results} config={config} />
+                                    <PointsBreakdown results={results} config={config} cutApplied={!!t.cutApplied} />
                                     {results.scorecards?.length ? (
                                       <ScorecardPanel scorecards={results.scorecards} />
                                     ) : (

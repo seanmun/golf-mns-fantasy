@@ -56,16 +56,36 @@ draft the 70, and each pick scores only as long as they keep advancing.
 
 Points come from hole-by-hole scorecards, not summary stats. An ace
 scores as hole-in-one only — never also as eagle or albatross, which
-would double-pay it. `made_cut_bonus` is awarded whenever a golfer is not
-cut, which means it is already showing during rounds 1–2 before any cut
-exists.
+would double-pay it.
+
+`made_cut_bonus` pays only when `tournaments.cutApplied` is true and the
+golfer is neither cut nor withdrawn. `cutApplied` latches on the first
+time the leaderboard reports **anyone** as cut — the only observable
+proof an event has a cut and that it has landed. It stays false all week
+at a no-cut event, which is why the FedEx playoffs don't pay it.
+
+It used to be `if (!is_cut)`, which paid every golfer from round 1 and
+clawed it back on Friday, paid withdrawals (status `wd` is not `cut`),
+and paid in full at no-cut events. `seasonStats.cutsMade` had the same
+bug. If you touch this, keep `PointsBreakdown` in PoolLeaderboard.tsx in
+step — it recomputes the same bonus client-side and the breakdown must
+add up to the total above it.
+
+Placement pays to 30th and **ties take the full value**: `parsePosition`
+maps `"T3"` to `3`, so a five-way T3 is five × the 3rd-place bonus.
 
 Each event in a pool scores independently and the totals add — so a
-golfer who plays all three playoff events earns three made-cut bonuses
-and up to three finish bonuses. That is intended. `golfer_results` has
-no unique constraint on `(tournament_id, golfer_id)`, so `recalculatePool`
-dedupes per event before summing; without that a stray duplicate row
-would double-pay.
+golfer who plays all three playoff events can earn up to three finish
+bonuses. That is intended. `golfer_results` has no unique constraint on
+`(tournament_id, golfer_id)`, so `recalculatePool` dedupes per event
+before summing; without that a stray duplicate row would double-pay.
+
+Scoring is **frozen into each pool at creation** (`pools.scoring_config`
+jsonb). Changing the defaults never rescores an existing pool — a pool
+created before a change keeps the old numbers. There are two defaults
+that must stay in step: the column default in `schema.ts` (what new
+pools get) and `DEFAULT_SCORING` in `engine.ts` (what the UI falls back
+to). Nothing exposes `scoringConfig` for editing yet.
 
 `api/scoring/recalculate.ts` must stay a thin wrapper over
 `recalculatePool`. It used to carry its own copy of the maths, and that
