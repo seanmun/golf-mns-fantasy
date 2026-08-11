@@ -70,6 +70,7 @@ export function Dashboard() {
                   <h3 className="font-semibold" style={{ color: 'var(--color-text-primary)' }}>{pool.name}</h3>
                   <p className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>
                     {pool.tournamentName}
+                    {pool.eventCount > 1 && ` +${pool.eventCount - 1} more`}
                     {pool.tournamentStartDate && (
                       <span style={{ color: 'var(--color-text-muted)' }}>
                         {' · '}

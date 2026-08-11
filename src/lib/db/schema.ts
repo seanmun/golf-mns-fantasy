@@ -1,6 +1,6 @@
 import {
   pgTable, pgSchema, text, integer, boolean, timestamp,
-  uuid, decimal, jsonb, index,
+  uuid, decimal, jsonb, index, unique,
 } from 'drizzle-orm/pg-core'
 
 // All golf tables live in the `golf` Postgres schema; shared cross-game
@@ -127,6 +127,11 @@ export const golfGolferResults = golfSchema.table('golfer_results', {
 
 export const golfPools = golfSchema.table('pools', {
   id: uuid('id').primaryKey().defaultRandom(),
+  // The FIRST event this pool scores. Single-event pools have only this
+  // one; a multi-week pool also has a row per event in pool_tournaments,
+  // and this always points at the earliest of them. Keeping it that way
+  // is what lets every "when does this lock / what event is this"
+  // query stay correct without knowing multi-week pools exist.
   tournamentId: uuid('tournament_id').notNull().references(() => golfTournaments.id),
   name: text('name').notNull(),
   description: text('description'),
@@ -160,6 +165,26 @@ export const golfPools = golfSchema.table('pools', {
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })
 
+// ─── POOL TOURNAMENTS ─────────────────────────────────────────────────────────
+
+// Every event a pool scores, in play order. A one-week pool has a single
+// row; a multi-week pool (e.g. the three FedEx playoff events) has one
+// per event and sums points across all of them.
+//
+// sortOrder 0 is always the same event as pools.tournamentId — the one
+// whose lock time locks the pool and whose field the draft is built from.
+export const golfPoolTournaments = golfSchema.table('pool_tournaments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  poolId: uuid('pool_id').notNull().references(() => golfPools.id),
+  tournamentId: uuid('tournament_id').notNull().references(() => golfTournaments.id),
+  sortOrder: integer('sort_order').notNull().default(0),
+}, (t) => [
+  unique('golf_pool_tournaments_pool_tournament_key').on(t.poolId, t.tournamentId),
+  index('golf_pool_tournaments_pool_idx').on(t.poolId),
+  // The sync's reverse lookup: which pools care about this event?
+  index('golf_pool_tournaments_tournament_idx').on(t.tournamentId),
+])
+
 // ─── POOL ENTRIES ─────────────────────────────────────────────────────────────
 
 export const golfPoolEntries = golfSchema.table('pool_entries', {
@@ -185,6 +210,7 @@ export type GolfGolfer = typeof golfGolfers.$inferSelect
 export type GolfTournamentField = typeof golfTournamentField.$inferSelect
 export type GolfGolferResults = typeof golfGolferResults.$inferSelect
 export type GolfPool = typeof golfPools.$inferSelect
+export type GolfPoolTournament = typeof golfPoolTournaments.$inferSelect
 export type GolfPoolEntry = typeof golfPoolEntries.$inferSelect
 export type NewGolfPool = typeof golfPools.$inferInsert
 export type NewGolfPoolEntry = typeof golfPoolEntries.$inferInsert

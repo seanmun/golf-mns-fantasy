@@ -1,7 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { db } from '../_db.js'
-import { golfPools, golfPoolEntries, golfGolfers, golfGolferResults, golfTournaments, users } from '../../src/lib/db/schema.js'
+import { golfPools, golfPoolEntries, golfGolfers, golfGolferResults, users } from '../../src/lib/db/schema.js'
 import { eq, inArray } from 'drizzle-orm'
+import { poolTournamentRows } from '../../src/lib/db/poolTournaments.js'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
@@ -32,13 +33,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .where(eq(golfPoolEntries.poolId, pool.id))
       .orderBy(golfPoolEntries.rank)
 
-    // Get all golfer results for this tournament
-    const results = await db
-      .select()
-      .from(golfGolferResults)
-      .where(eq(golfGolferResults.tournamentId, pool.tournamentId))
+    // Every event this pool scores, in play order.
+    const slate = await poolTournamentRows(db, pool)
+    const tournamentIds = slate.map((t) => t.id)
 
-    const resultMap = Object.fromEntries(results.map((r) => [r.golferId, r]))
+    // Results for all of them. Keyed by tournament AND golfer: keying on
+    // golfer alone made three events of results for the same player
+    // overwrite each other, so a three-week pool showed only whichever
+    // row happened to come back last.
+    const results = tournamentIds.length
+      ? await db
+          .select()
+          .from(golfGolferResults)
+          .where(inArray(golfGolferResults.tournamentId, tournamentIds))
+      : []
+    const resultMap = new Map(results.map((r) => [`${r.tournamentId}:${r.golferId}`, r]))
 
     // Get all golfer names
     const allGolferIds = [...new Set(entries.flatMap((e) => e.golferIds as string[]))]
@@ -51,22 +60,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ...entry,
       golfers: (entry.golferIds as string[]).map((gid) => ({
         golfer: golferMap[gid] || null,
-        results: resultMap[gid] || null,
+        // One results row per event the golfer actually played; events
+        // they didn't advance to are simply absent.
+        byTournament: Object.fromEntries(
+          tournamentIds
+            .map((tid) => [tid, resultMap.get(`${tid}:${gid}`) ?? null])
+            .filter(([, r]) => r !== null)
+        ),
       })),
     }))
 
-    const [tournament] = await db
-      .select({
-        name: golfTournaments.name,
-        status: golfTournaments.status,
-        timeZone: golfTournaments.timeZone,
-        lastSyncedAt: golfTournaments.lastSyncedAt,
-      })
-      .from(golfTournaments)
-      .where(eq(golfTournaments.id, pool.tournamentId))
-      .limit(1)
-
-    return res.status(200).json({ leaderboard, pool, tournament })
+    return res.status(200).json({
+      leaderboard,
+      pool,
+      tournaments: slate.map((t) => ({
+        id: t.id,
+        name: t.name,
+        course: t.course,
+        status: t.status,
+        startDate: t.startDate,
+        endDate: t.endDate,
+        timeZone: t.timeZone,
+        lastSyncedAt: t.lastSyncedAt,
+      })),
+      // The first event — what the page header and sync line described
+      // before pools could span more than one.
+      tournament: slate[0] ?? null,
+    })
   } catch (error) {
     console.error('GET /api/pools/leaderboard error:', error)
     return res.status(500).json({ error: 'Internal server error' })

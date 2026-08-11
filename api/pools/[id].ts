@@ -1,8 +1,14 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { db } from '../_db.js'
 import { verifyAuth, isAdmin } from '../_middleware.js'
-import { golfPools, golfTournaments, golfPoolEntries } from '../../src/lib/db/schema.js'
+import {
+  golfPools,
+  golfTournaments,
+  golfPoolEntries,
+  golfPoolTournaments,
+} from '../../src/lib/db/schema.js'
 import { eq, count } from 'drizzle-orm'
+import { poolTournamentRows } from '../../src/lib/db/poolTournaments.js'
 import { getDraftState, controlDraft } from '../_draftService.js'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -61,11 +67,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       userEntry = entries.find((e) => e.userId === userId) || null
     }
 
+    // Every event this pool scores, in play order. tournamentName and
+    // friends above still describe the first one, so callers that don't
+    // know about multi-week pools keep rendering exactly what they did.
+    const slate = await poolTournamentRows(db, pool)
+
     // The join code is the key to a private pool — only the owner and
     // people already in it get to see one.
     const canSeeJoinCode = !!userId && (userId === pool.createdBy || !!userEntry)
     return res.status(200).json({
       pool: { ...pool, joinCode: canSeeJoinCode ? pool.joinCode : null },
+      tournaments: slate.map((t) => ({
+        id: t.id,
+        name: t.name,
+        course: t.course,
+        location: t.location,
+        startDate: t.startDate,
+        endDate: t.endDate,
+        lockTime: t.lockTime,
+        status: t.status,
+      })),
       entryCount: entryCount || 0,
       userEntry,
     })
@@ -101,8 +122,9 @@ async function handleDelete(req: VercelRequest, res: VercelResponse) {
       })
     }
 
-    // Delete entries first, then the pool
+    // Children first, then the pool — both reference it.
     await db.delete(golfPoolEntries).where(eq(golfPoolEntries.poolId, pool.id))
+    await db.delete(golfPoolTournaments).where(eq(golfPoolTournaments.poolId, pool.id))
     await db.delete(golfPools).where(eq(golfPools.id, pool.id))
 
     return res.status(200).json({ success: true })

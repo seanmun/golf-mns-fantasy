@@ -22,7 +22,7 @@ export function PoolManage() {
   const { data, isLoading } = useQuery({
     queryKey: ['pool-manage', poolId],
     queryFn: async () => {
-      const data = await apiFetch(`/api/pools/${poolId}`) as { pool: any }
+      const data = await apiFetch(`/api/pools/${poolId}`) as { pool: any; tournaments: any[] }
       if (!loaded) {
         setName(data.pool.name)
         setDescription(data.pool.description || '')
@@ -38,6 +38,7 @@ export function PoolManage() {
   if (!data) return null
 
   const pool = data.pool
+  const events = data.tournaments ?? []
 
   async function handleSave() {
     setSaving(true)
@@ -147,9 +148,15 @@ export function PoolManage() {
       <section className="rounded-xl border p-6 mb-6" style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
         <h2 className="font-display text-lg mb-4" style={{ color: 'var(--color-text-primary)' }}>POOL INFO</h2>
         <div className="space-y-2 text-sm">
-          <div className="flex justify-between">
-            <span style={{ color: 'var(--color-text-muted)' }}>Tournament</span>
-            <span style={{ color: 'var(--color-text-primary)' }}>{pool.tournamentName}</span>
+          <div className="flex justify-between gap-4">
+            <span className="shrink-0" style={{ color: 'var(--color-text-muted)' }}>
+              {events.length > 1 ? 'Events' : 'Tournament'}
+            </span>
+            <span className="text-right" style={{ color: 'var(--color-text-primary)' }}>
+              {events.length > 1
+                ? events.map((t: any) => t.name).join(', ')
+                : pool.tournamentName}
+            </span>
           </div>
           <div className="flex justify-between">
             <span style={{ color: 'var(--color-text-muted)' }}>Join Code</span>

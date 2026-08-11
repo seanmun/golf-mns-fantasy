@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { db } from '../_db.js'
 import { verifyAuth } from '../_middleware.js'
 import {
@@ -10,6 +10,7 @@ import {
   golfGolfers,
   users,
 } from '../../src/lib/db/schema.js'
+import { poolTournamentIds, poolTournamentRows } from '../../src/lib/db/poolTournaments.js'
 import {
   createDraft,
   controlDraft,
@@ -49,6 +50,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .limit(1)
     if (!tournament) return res.status(404).json({ error: 'Tournament not found' })
 
+    // A multi-week pool drafts once, before its first event, and the
+    // roster rides every event. Name the draft for the whole slate so
+    // the lobby and the on-the-clock emails say what people are playing.
+    const slate = await poolTournamentRows(db, pool)
+    const draftName =
+      slate.length > 1
+        ? `${pool.name} · ${tournament.name} +${slate.length - 1} more`
+        : `${pool.name} · ${tournament.name}`
+
     // Draft order = join order, rebuilt from whoever is in the pool
     // right now. Called again at start time so late joiners get a slot.
     const buildParticipants = async () => {
@@ -70,9 +80,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }))
     }
 
-    // The draftable pool is this event's field only — golfers not
-    // playing never enter the draft.
+    // The draftable pool is the field of every event this pool scores —
+    // golfers not playing any of them never enter the draft.
+    //
+    // For the FedEx playoffs that is week 1's field and nothing else:
+    // the BMW and TOUR Championship entry lists don't exist until the
+    // prior event finishes. That is the game, not a gap — you draft 70
+    // players deep and each pick keeps scoring only as long as they keep
+    // advancing.
     const buildItems = async () => {
+      const tournamentIds = await poolTournamentIds(db, pool)
       const field = await db
         .select({
           id: golfGolfers.id,
@@ -81,16 +98,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           country: golfGolfers.country,
           seasonStats: golfGolfers.seasonStats,
           teeTime: golfTournamentField.teeTime,
+          tournamentId: golfTournamentField.tournamentId,
         })
         .from(golfTournamentField)
         .innerJoin(golfGolfers, eq(golfTournamentField.golferId, golfGolfers.id))
         .where(
           and(
-            eq(golfTournamentField.tournamentId, tournament.id),
+            inArray(golfTournamentField.tournamentId, tournamentIds),
             eq(golfTournamentField.isWithdrawn, false)
           )
         )
-      return field.map((g) => ({
+      // One item per golfer even if they're in several fields. The tee
+      // time shown is the earliest event's — the one being drafted for.
+      const order = new Map(tournamentIds.map((id, i) => [id, i]))
+      const byGolfer = new Map<string, (typeof field)[number]>()
+      for (const g of field) {
+        const seen = byGolfer.get(g.id)
+        if (
+          !seen ||
+          (order.get(g.tournamentId) ?? Infinity) < (order.get(seen.tournamentId) ?? Infinity)
+        ) {
+          byGolfer.set(g.id, g)
+        }
+      }
+      return [...byGolfer.values()].map((g) => ({
         ref: g.id,
         name: g.name,
         rankHint: g.worldRanking ?? null,
@@ -134,7 +165,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         gameSlug: GAME_SLUG,
         scopeType: 'pool',
         scopeId: pool.id,
-        name: `${pool.name} · ${tournament.name}`,
+        name: draftName,
         lobbyUrl: `${appUrl}/pools/${pool.id}/draft`,
         mode: 'draft',
         orderType: 'snake',
@@ -180,7 +211,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         action: 'set_config',
         rounds: pool.rosterSize,
         pickSeconds: pool.draftPickSeconds,
-        name: `${pool.name} · ${tournament.name}`,
+        name: draftName,
       })
       const result = await controlDraft(pool.draftId, { action: 'start' })
       return res.status(200).json(result)
@@ -206,7 +237,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         action: 'set_config',
         rounds: pool.rosterSize,
         pickSeconds: pool.draftPickSeconds,
-        name: `${pool.name} · ${tournament.name}`,
+        name: draftName,
       })
       return res.status(200).json({ ok: true, participants: participants.length, items: items.length })
     }

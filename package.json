@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "db:push": "drizzle-kit push",
+    "db:multiweek": "tsx scripts/setup-multi-week-pools.ts",
     "db:seed": "npx tsx src/lib/db/seed.ts"
   },
   "dependencies": {

@@ -19,14 +19,22 @@ export function PoolDetail() {
   const { data, isLoading } = useQuery({
     queryKey: ['pool', poolId],
     queryFn: async () => {
-      return apiFetch(`/api/pools/${poolId}`) as Promise<{ pool: any; entryCount: number; userEntry: any }>
+      return apiFetch(`/api/pools/${poolId}`) as Promise<{
+        pool: any
+        tournaments: any[]
+        entryCount: number
+        userEntry: any
+      }>
     },
   })
 
   if (isLoading) return <LoadingSpinner />
   if (!data) return null
 
-  const { pool, entryCount, userEntry } = data
+  const { pool, tournaments = [], entryCount, userEntry } = data
+  // A multi-week pool scores several events; pool.tournament* still
+  // describes the first, which is the one that locks it.
+  const isMulti = tournaments.length > 1
   const isLocked = pool.status === 'locked' || pool.status === 'active' || new Date() >= new Date(pool.tournamentLockTime)
   const hasPicks = userEntry && (userEntry.golferIds as string[]).length > 0
   const isOwner = user?.id === pool.createdBy
@@ -78,7 +86,9 @@ export function PoolDetail() {
               {pool.name}
             </h1>
             <p style={{ color: 'var(--color-text-secondary)' }}>
-              {pool.tournamentName} · {pool.tournamentCourse}
+              {isMulti
+                ? `${tournaments.length} events · ${pool.tournamentName} +${tournaments.length - 1} more`
+                : `${pool.tournamentName} · ${pool.tournamentCourse}`}
             </p>
           </div>
           <span
@@ -94,6 +104,43 @@ export function PoolDetail() {
 
         {pool.description && (
           <p className="mt-3 text-sm" style={{ color: 'var(--color-text-secondary)' }}>{pool.description}</p>
+        )}
+
+        {/* The whole slate, in play order. One draft before event 1, and
+            the roster rides all of them. */}
+        {isMulti && (
+          <div className="mt-4 rounded-lg border divide-y" style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
+            {tournaments.map((t: any, i: number) => (
+              <div
+                key={t.id}
+                className="flex items-center justify-between px-4 py-2.5"
+                style={{ borderColor: 'var(--color-border)' }}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="font-mono text-xs shrink-0" style={{ color: 'var(--color-text-muted)' }}>{i + 1}</span>
+                  <div className="min-w-0">
+                    <div className="text-sm truncate" style={{ color: 'var(--color-text-primary)' }}>{t.name}</div>
+                    <div className="text-xs truncate" style={{ color: 'var(--color-text-muted)' }}>
+                      {t.course} ·{' '}
+                      {new Date(t.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      –{new Date(t.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </div>
+                  </div>
+                </div>
+                <span
+                  className="text-xs shrink-0 ml-3"
+                  style={{
+                    color:
+                      t.status === 'active'
+                        ? 'var(--color-green-primary)'
+                        : 'var(--color-text-muted)',
+                  }}
+                >
+                  {t.status === 'completed' ? 'Final' : t.status === 'active' ? 'Live' : 'Upcoming'}
+                </span>
+              </div>
+            ))}
+          </div>
         )}
 
         <div className="flex items-center gap-4 mt-4 text-sm" style={{ color: 'var(--color-text-muted)' }}>

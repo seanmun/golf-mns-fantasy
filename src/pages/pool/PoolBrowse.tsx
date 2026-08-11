@@ -112,7 +112,10 @@ export function PoolBrowse() {
                 )}
               </div>
               <p className="text-xs mb-4" style={{ color: 'var(--color-text-secondary)' }}>
-                {pool.tournamentName} · {pool.tournamentCourse}
+                {pool.tournamentName}
+                {pool.eventCount > 1
+                  ? ` +${pool.eventCount - 1} more`
+                  : ` · ${pool.tournamentCourse}`}
               </p>
               <div className="flex items-center gap-4 text-xs" style={{ color: 'var(--color-text-muted)' }}>
                 <span className="flex items-center gap-1">

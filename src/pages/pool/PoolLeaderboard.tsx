@@ -39,7 +39,7 @@ function syncStatusLine(tournament: any): string | null {
 
 // Per-pool scoring key. Reads the pool's own config so custom scoring
 // stays accurate.
-function ScoringLegend({ config }: { config: ScoringConfig }) {
+function ScoringLegend({ config, eventCount }: { config: ScoringConfig; eventCount: number }) {
   const sign = (n: number) => (n > 0 ? `+${n}` : `${n}`)
   const holes: Array<[string, number, ScoreKind]> = [
     ['Ace', config.hole_in_one, 'ace'],
@@ -100,16 +100,26 @@ function ScoringLegend({ config }: { config: ScoringConfig }) {
         <p className="mt-1.5 text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
           Every golfer on your team scores; round columns show hole points only, the total adds cut and finish bonuses.
         </p>
+        {eventCount > 1 && (
+          <p className="mt-1.5 text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+            This pool spans {eventCount} events. Each one scores separately — including its own cut
+            and finish bonuses — and they add up. A golfer who doesn't advance simply stops scoring.
+          </p>
+        )}
       </div>
     </details>
   )
 }
 
-// Team fantasy points per round, summed from stored hole-by-hole data.
-function roundPoints(entry: any, config: ScoringConfig): Record<number, number> {
+// Team fantasy points per round for ONE event, summed from stored
+// hole-by-hole data. Scoped per event on purpose: summing across a
+// multi-week pool would stack every event's round 1 into one cell.
+function roundPoints(entry: any, config: ScoringConfig, tournamentId: string): Record<number, number> {
   const totals: Record<number, number> = {}
-  for (const { results } of entry.golfers ?? []) {
-    for (const r of results?.scorecards ?? []) {
+  for (const g of entry.golfers ?? []) {
+    const results = g.byTournament?.[tournamentId]
+    if (!results) continue
+    for (const r of results.scorecards ?? []) {
       const pts = pointsFromHoles(Object.values(r.holes ?? {}), config)
       totals[r.round] = Math.round(((totals[r.round] ?? 0) + pts) * 100) / 100
     }
@@ -133,6 +143,25 @@ function golferPoints(results: any, config: ScoringConfig): number {
     },
     config
   )
+}
+
+// A team's points from one event only.
+function entryPointsForEvent(entry: any, config: ScoringConfig, tournamentId: string): number {
+  let total = 0
+  for (const g of entry.golfers ?? []) {
+    const results = g.byTournament?.[tournamentId]
+    if (results) total += golferPoints(results, config)
+  }
+  return Math.round(total * 100) / 100
+}
+
+// A golfer's points across every event they played in this pool.
+function golferTotal(byTournament: Record<string, any>, config: ScoringConfig): number {
+  const total = Object.values(byTournament ?? {}).reduce(
+    (s: number, r: any) => s + golferPoints(r, config),
+    0
+  )
+  return Math.round(total * 100) / 100
 }
 
 // One palette for every score reference in the app — the legend teaches
@@ -176,8 +205,8 @@ function holeColor(score: number, par: number) {
   return SCORE_STYLE[kindOf(score, par)]
 }
 
-// Every point a golfer earned, attributed: hole scoring per round, plus
-// the tournament-level bonuses (made cut, finish position).
+// Every point a golfer earned at ONE event, attributed: hole scoring per
+// round, plus that event's bonuses (made cut, finish position).
 function PointsBreakdown({ results, config }: { results: any; config: ScoringConfig }) {
   const rounds: Array<{ round: number; holes: Record<string, { score: number; par: number }> }> =
     results?.scorecards ?? []
@@ -261,6 +290,22 @@ function ScorecardPanel({ scorecards }: { scorecards: Array<{ round: number; hol
   )
 }
 
+// The Rd 1–4 strip for a single event.
+function RoundStrip({ rp }: { rp: Record<number, number> }) {
+  return (
+    <div className="flex gap-2">
+      {[1, 2, 3, 4].map((r) => (
+        <div key={r} className="flex-1 text-center py-1.5 rounded-lg" style={{ background: 'var(--color-surface-2)' }}>
+          <div className="text-[9px] uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>Rd {r}</div>
+          <div className="text-sm font-mono font-bold" style={{ color: rp[r] !== undefined ? 'var(--color-text-primary)' : 'var(--color-text-muted)' }}>
+            {rp[r] !== undefined ? rp[r] : '—'}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function PoolLeaderboard() {
   const { poolId } = useParams<{ poolId: string }>()
   const { user } = useUser()
@@ -273,14 +318,15 @@ export function PoolLeaderboard() {
       const res = await fetch(`/api/pools/leaderboard?poolId=${poolId}`)
       if (!res.ok) throw new Error('Failed to load leaderboard')
       const json = await res.json()
-      // Fire-and-forget: nudge the live score sync. Server-side throttle
-      // means this only hits sportsdata every few minutes no matter how
-      // many viewers are on the page.
-      if (json?.pool?.tournamentId) {
+      // Fire-and-forget: nudge the live score sync for every event still
+      // in play. Server-side throttle means this only hits SlashGolf
+      // every few hours no matter how many viewers are on the page.
+      for (const t of json?.tournaments ?? []) {
+        if (t.status === 'completed' || t.status === 'cancelled') continue
         void fetch('/api/scoring/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tournamentId: json.pool.tournamentId }),
+          body: JSON.stringify({ tournamentId: t.id }),
         }).catch(() => {})
       }
       return json
@@ -290,8 +336,14 @@ export function PoolLeaderboard() {
 
   if (isLoading) return <LoadingSpinner />
 
-  const { leaderboard = [], pool, tournament } = data || {}
-  const syncLine = syncStatusLine(tournament)
+  const { leaderboard = [], pool, tournaments = [] } = data || {}
+  const config: ScoringConfig = pool?.scoringConfig ?? DEFAULT_SCORING
+  const isMulti = tournaments.length > 1
+  // The event whose sync state is worth reporting: the first one still
+  // in play, or the last one if they're all done.
+  const syncTarget =
+    tournaments.find((t: any) => t.status !== 'completed') ?? tournaments[tournaments.length - 1]
+  const syncLine = syncStatusLine(syncTarget)
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-12">
@@ -306,11 +358,35 @@ export function PoolLeaderboard() {
         {pool && (
           <p className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>
             {pool.name} · {leaderboard.length} entries
+            {isMulti && ` · ${tournaments.length} events`}
           </p>
+        )}
+        {isMulti && (
+          <div className="flex flex-wrap gap-1.5 mt-3">
+            {tournaments.map((t: any, i: number) => (
+              <span
+                key={t.id}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border"
+                style={{
+                  background: 'var(--color-surface)',
+                  borderColor:
+                    t.status === 'active' ? 'var(--color-green-muted)' : 'var(--color-border)',
+                  color:
+                    t.status === 'active'
+                      ? 'var(--color-green-primary)'
+                      : 'var(--color-text-muted)',
+                }}
+              >
+                <span className="font-mono">{i + 1}</span>
+                {t.name}
+                {t.status === 'completed' && ' ✓'}
+              </span>
+            ))}
+          </div>
         )}
       </div>
 
-      <ScoringLegend config={pool?.scoringConfig ?? DEFAULT_SCORING} />
+      <ScoringLegend config={config} eventCount={tournaments.length} />
 
       {leaderboard.length === 0 ? (
         <p style={{ color: 'var(--color-text-muted)' }}>No entries yet.</p>
@@ -342,25 +418,29 @@ export function PoolLeaderboard() {
                   </span>
                 </div>
 
-                {/* Per-round team fantasy points (hole scoring; total also
-                    includes cut/position bonuses) */}
-                {(() => {
-                  const rp = roundPoints(entry, pool?.scoringConfig ?? DEFAULT_SCORING)
-                  const roundsPresent = [1, 2, 3, 4].filter((r) => rp[r] !== undefined)
-                  if (roundsPresent.length === 0) return null
+                {/* Per-round team fantasy points (hole scoring; the total
+                    also includes cut/position bonuses). A multi-week pool
+                    gets one strip per event so rounds never stack. */}
+                {tournaments.map((t: any) => {
+                  const rp = roundPoints(entry, config, t.id)
+                  const played = Object.keys(rp).length > 0
+                  if (!isMulti) {
+                    return played ? <div key={t.id} className="mb-3"><RoundStrip rp={rp} /></div> : null
+                  }
                   return (
-                    <div className="flex gap-2 mb-3">
-                      {[1, 2, 3, 4].map((r) => (
-                        <div key={r} className="flex-1 text-center py-1.5 rounded-lg" style={{ background: 'var(--color-surface-2)' }}>
-                          <div className="text-[9px] uppercase tracking-wide" style={{ color: 'var(--color-text-muted)' }}>Rd {r}</div>
-                          <div className="text-sm font-mono font-bold" style={{ color: rp[r] !== undefined ? 'var(--color-text-primary)' : 'var(--color-text-muted)' }}>
-                            {rp[r] !== undefined ? rp[r] : '—'}
-                          </div>
-                        </div>
-                      ))}
+                    <div key={t.id} className="mb-3">
+                      <div className="flex items-baseline justify-between mb-1">
+                        <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-secondary)' }}>
+                          {t.name}
+                        </span>
+                        <span className="text-xs font-mono" style={{ color: played ? 'var(--color-green-primary)' : 'var(--color-text-muted)' }}>
+                          {played ? `${entryPointsForEvent(entry, config, t.id)} pts` : 'not started'}
+                        </span>
+                      </div>
+                      {played && <RoundStrip rp={rp} />}
                     </div>
                   )
-                })()}
+                })}
 
                 {/* Players dropdown */}
                 <button
@@ -378,10 +458,10 @@ export function PoolLeaderboard() {
                 {/* Golfer breakdown — tap a golfer for hole-by-hole */}
                 {openEntry === entry.id && (
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {entry.golfers.map(({ golfer, results }: any) => {
+                  {entry.golfers.map(({ golfer, byTournament }: any) => {
                     const key = `${entry.id}:${golfer?.id}`
                     const isOpen = openGolfer === key
-                    const hasHoles = !!results?.scorecards?.length
+                    const playedIn = tournaments.filter((t: any) => byTournament?.[t.id])
                     return (
                       <div key={golfer?.id || Math.random()} className={isOpen ? 'col-span-2 sm:col-span-3' : ''}>
                         <button
@@ -392,27 +472,47 @@ export function PoolLeaderboard() {
                             outline: isOpen ? '1px solid var(--color-green-muted)' : 'none',
                           }}
                         >
-                          <span className="text-xs truncate" style={{ color: 'var(--color-text-secondary)' }}>
+                          <span className="text-xs truncate text-left" style={{ color: 'var(--color-text-secondary)' }}>
                             {golfer?.name || 'Unknown'}
+                            {isMulti && (
+                              <span className="block text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
+                                {playedIn.length}/{tournaments.length} events
+                              </span>
+                            )}
                           </span>
-                          {results ? (
-                            <ScoreBadge score={golferPoints(results, pool?.scoringConfig ?? DEFAULT_SCORING)} />
+                          {playedIn.length > 0 ? (
+                            <ScoreBadge score={golferTotal(byTournament, config)} />
                           ) : (
                             <span className="text-xs font-mono" style={{ color: 'var(--color-text-muted)' }}>-</span>
                           )}
                         </button>
                         {isOpen && (
                           <>
-                            <PointsBreakdown
-                              results={results}
-                              config={pool?.scoringConfig ?? DEFAULT_SCORING}
-                            />
-                            {hasHoles ? (
-                              <ScorecardPanel scorecards={results.scorecards} />
-                            ) : (
+                            {playedIn.length === 0 ? (
                               <p className="mt-2 px-3 py-2 rounded-lg text-[11px]" style={{ background: 'var(--color-surface)', color: 'var(--color-text-muted)' }}>
-                                Hole-by-hole appears after the next stats sync.
+                                No scores yet.
                               </p>
+                            ) : (
+                              playedIn.map((t: any) => {
+                                const results = byTournament[t.id]
+                                return (
+                                  <div key={t.id} className="mt-2">
+                                    {isMulti && (
+                                      <div className="text-[10px] font-bold uppercase tracking-wide px-1" style={{ color: 'var(--color-text-secondary)' }}>
+                                        {t.name}
+                                      </div>
+                                    )}
+                                    <PointsBreakdown results={results} config={config} />
+                                    {results.scorecards?.length ? (
+                                      <ScorecardPanel scorecards={results.scorecards} />
+                                    ) : (
+                                      <p className="mt-2 px-3 py-2 rounded-lg text-[11px]" style={{ background: 'var(--color-surface)', color: 'var(--color-text-muted)' }}>
+                                        Hole-by-hole appears after the next stats sync.
+                                      </p>
+                                    )}
+                                  </div>
+                                )
+                              })
                             )}
                           </>
                         )}
@@ -429,7 +529,7 @@ export function PoolLeaderboard() {
 
       {syncLine && (
         <p className="mt-6 text-center text-xs" style={{ color: 'var(--color-text-muted)' }}>
-          {syncLine}
+          {isMulti && syncTarget ? `${syncTarget.name} · ` : ''}{syncLine}
         </p>
       )}
     </div>

@@ -2,8 +2,13 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { db } from '../_db.js'
 import { verifyAuth } from '../_middleware.js'
 import { ensureUser } from '../_ensureUser.js'
-import { golfPools, golfTournaments, golfPoolEntries } from '../../src/lib/db/schema.js'
-import { eq, count } from 'drizzle-orm'
+import {
+  golfPools,
+  golfTournaments,
+  golfPoolEntries,
+  golfPoolTournaments,
+} from '../../src/lib/db/schema.js'
+import { eq, count, inArray } from 'drizzle-orm'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'GET') return getPools(req, res)
@@ -52,9 +57,19 @@ async function getPools(req: VercelRequest, res: VercelResponse) {
 
     const countMap = Object.fromEntries(entryCounts.map((e) => [e.poolId, e.count]))
 
+    // How many events each pool spans, so the card can say "+2 more"
+    // instead of naming only the first one.
+    const eventCounts = await db
+      .select({ poolId: golfPoolTournaments.poolId, count: count() })
+      .from(golfPoolTournaments)
+      .groupBy(golfPoolTournaments.poolId)
+    const eventMap = Object.fromEntries(eventCounts.map((e) => [e.poolId, e.count]))
+
     const result = filtered.map((p) => ({
       ...p,
       entryCount: countMap[p.id] || 0,
+      // Pools created before pool_tournaments existed have no rows.
+      eventCount: eventMap[p.id] || 1,
     }))
 
     return res.status(200).json({ pools: result })
@@ -74,6 +89,7 @@ async function createPool(req: VercelRequest, res: VercelResponse) {
       name,
       description,
       tournamentId,
+      tournamentIds,
       rosterSize,
       maxEntries,
       isPublic,
@@ -81,23 +97,48 @@ async function createPool(req: VercelRequest, res: VercelResponse) {
       draftPickSeconds,
     } = req.body
 
-    if (!name || !tournamentId) {
-      return res.status(400).json({ error: 'name and tournamentId are required' })
+    // One event or several. tournamentId stays accepted so anything
+    // still posting the old shape keeps working.
+    const requestedIds: string[] = [
+      ...new Set(
+        (Array.isArray(tournamentIds) && tournamentIds.length > 0
+          ? tournamentIds
+          : [tournamentId]
+        ).filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
+      ),
+    ]
+
+    if (!name || requestedIds.length === 0) {
+      return res.status(400).json({ error: 'name and at least one tournament are required' })
+    }
+    if (requestedIds.length > 8) {
+      return res.status(400).json({ error: 'A pool can span at most 8 events' })
     }
 
-    // A pool for an event that already teed off is dead on arrival —
-    // it locks immediately and nobody can pick.
-    const [tournament] = await db
-      .select({ lockTime: golfTournaments.lockTime, status: golfTournaments.status })
+    const found = await db
+      .select({
+        id: golfTournaments.id,
+        startDate: golfTournaments.startDate,
+        lockTime: golfTournaments.lockTime,
+        status: golfTournaments.status,
+      })
       .from(golfTournaments)
-      .where(eq(golfTournaments.id, tournamentId))
-      .limit(1)
-    if (!tournament) return res.status(404).json({ error: 'Tournament not found' })
-    if (
-      tournament.status === 'completed' ||
-      tournament.status === 'cancelled' ||
-      new Date() >= tournament.lockTime
-    ) {
+      .where(inArray(golfTournaments.id, requestedIds))
+    if (found.length !== requestedIds.length) {
+      return res.status(404).json({ error: 'Tournament not found' })
+    }
+
+    // Play order decides everything downstream: the first event's lock
+    // time locks the pool, and its field is what gets drafted.
+    const slate = [...found].sort((a, b) => a.startDate.getTime() - b.startDate.getTime())
+
+    const dead = slate.find((t) => t.status === 'completed' || t.status === 'cancelled')
+    if (dead) {
+      return res.status(400).json({ error: 'One of those events is already over — pick upcoming ones' })
+    }
+    // A pool whose first event has teed off is dead on arrival: it locks
+    // immediately and nobody can draft.
+    if (new Date() >= slate[0].lockTime) {
       return res
         .status(400)
         .json({ error: 'That event has already started — pick an upcoming one' })
@@ -122,7 +163,8 @@ async function createPool(req: VercelRequest, res: VercelResponse) {
       .values({
         name,
         description: description || null,
-        tournamentId,
+        // Always the earliest event — see the column comment in schema.ts.
+        tournamentId: slate[0].id,
         createdBy: userId,
         rosterSize: rosterSize || 6,
         maxEntries: maxEntries || null,
@@ -136,6 +178,16 @@ async function createPool(req: VercelRequest, res: VercelResponse) {
       })
       .returning()
 
+    // Write a row per event even for a one-week pool, so every reader
+    // has one shape to handle and nothing depends on the fallback.
+    await db.insert(golfPoolTournaments).values(
+      slate.map((t, i) => ({
+        poolId: pool.id,
+        tournamentId: t.id,
+        sortOrder: i,
+      }))
+    )
+
     // The creator is a member of their own pool — otherwise they'd have
     // to join it separately and the member list looks empty.
     await db.insert(golfPoolEntries).values({
@@ -145,7 +197,7 @@ async function createPool(req: VercelRequest, res: VercelResponse) {
       isLocked: false,
     })
 
-    return res.status(201).json({ pool })
+    return res.status(201).json({ pool, eventCount: slate.length })
   } catch (error) {
     console.error('POST /api/pools error:', error)
     return res.status(500).json({ error: 'Internal server error' })

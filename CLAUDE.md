@@ -19,14 +19,38 @@ one.
 
 ## Shape
 
-- **Pools** are one-off tournament contests. `pickMode` is `pickem`
-  (anyone picks anyone, duplicates allowed) or `draft` (snake, each
-  golfer once).
+- **Pools** are tournament contests. `pickMode` is `pickem` (anyone
+  picks anyone, duplicates allowed) or `draft` (snake, each golfer once).
+- A pool spans **one or more events**, listed in `golf.pool_tournaments`
+  in play order. `pools.tournament_id` always points at the *first* of
+  them, which is what lets every "when does this lock / what event is
+  this" query stay correct without knowing multi-week pools exist.
 - **Golf owns** pools, entries, rosters, scoring, and the leaderboard.
 - **The hub owns the draft** — order, clock, picks. Golf talks to it
   through `api/_draftService.ts` with `DRAFT_SERVICE_SECRET`, then copies
   finished picks into `golf.pool_entries` so scoring works unchanged.
 - Pool creators are members of their own pool automatically.
+
+## Multi-week pools
+
+One draft before the first event; the roster rides every event and
+points accumulate. Everything that reads a pool's events must go through
+`src/lib/db/poolTournaments.ts`, never `pools.tournament_id` alone.
+
+The trap is the **reverse** direction. `syncTournament` finds pools for
+the event it just synced; matching on `pools.tournament_id` makes a
+three-week pool invisible in weeks 2 and 3 — no scorecard pass for its
+drafted golfers, no rescore, no status change. It freezes on week-1
+points and looks like a scoring bug. Use `poolIdsForTournament`.
+
+A pool **locks** when its first event does and is only **completed**
+when its last one is. Completing on any single event closes a
+multi-week pool early and stops it scoring.
+
+The draftable field is the union of every event's field. For the FedEx
+playoffs that is week 1 and nothing else — the BMW and TOUR Championship
+entry lists don't exist until the prior event ends. That's the game: you
+draft the 70, and each pick scores only as long as they keep advancing.
 
 ## Scoring
 
@@ -35,6 +59,17 @@ scores as hole-in-one only — never also as eagle or albatross, which
 would double-pay it. `made_cut_bonus` is awarded whenever a golfer is not
 cut, which means it is already showing during rounds 1–2 before any cut
 exists.
+
+Each event in a pool scores independently and the totals add — so a
+golfer who plays all three playoff events earns three made-cut bonuses
+and up to three finish bonuses. That is intended. `golfer_results` has
+no unique constraint on `(tournament_id, golfer_id)`, so `recalculatePool`
+dedupes per event before summing; without that a stray duplicate row
+would double-pay.
+
+`api/scoring/recalculate.ts` must stay a thin wrapper over
+`recalculatePool`. It used to carry its own copy of the maths, and that
+copy was single-event.
 
 ## Live data
 

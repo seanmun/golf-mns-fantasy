@@ -1,4 +1,4 @@
-import { eq, and, inArray } from 'drizzle-orm'
+import { eq, and, inArray, or } from 'drizzle-orm'
 import type { NeonHttpDatabase } from 'drizzle-orm/neon-http'
 import {
   golfTournaments,
@@ -8,6 +8,7 @@ import {
   golfPools,
   golfPoolEntries,
 } from '../db/schema.js'
+import { poolIdsForTournament, poolTournamentRows } from '../db/poolTournaments.js'
 import { recalculatePool } from './recalculatePool.js'
 import { recomputeSeasonStats } from './seasonStats.js'
 import { controlDraft } from '../../../api/_draftService.js'
@@ -75,10 +76,24 @@ export async function syncTournament(
     .where(eq(golfTournamentField.tournamentId, tournament.id))
   const fieldByGolfer = new Map(existingField.map((f) => [f.golferId, f]))
 
+  // Every pool that scores this event — not just the ones that START at
+  // it. A three-week playoff pool points its own tournamentId at week 1,
+  // so a plain tournamentId match would make it INVISIBLE here in weeks
+  // 2 and 3: no scorecard pass for its drafted golfers, no rescore, no
+  // status update. It would silently freeze on week-1 points.
+  // The union also covers pools that predate pool_tournaments.
+  const joinedPoolIds = await poolIdsForTournament(db, tournament.id)
   const pools = await db
     .select()
     .from(golfPools)
-    .where(eq(golfPools.tournamentId, tournament.id))
+    .where(
+      joinedPoolIds.length > 0
+        ? or(
+            eq(golfPools.tournamentId, tournament.id),
+            inArray(golfPools.id, joinedPoolIds)
+          )
+        : eq(golfPools.tournamentId, tournament.id)
+    )
   const pickedGolferIds = new Set<string>()
   if (pools.length > 0) {
     const entries = await db
@@ -230,10 +245,19 @@ export async function syncTournament(
 
   let entriesRecalculated = 0
   for (const pool of pools) {
+    // Read the pool's whole slate — this event's new status is already
+    // persisted above, so these rows are current.
+    const events = await poolTournamentRows(db, pool)
+    const slate = events.length > 0 ? events : [{ ...tournament, status: newStatus }]
+
     let poolStatus = pool.status
     if (poolStatus !== 'cancelled') {
-      if (newStatus === 'completed') poolStatus = 'completed'
-      else if (now >= tournament.lockTime) poolStatus = 'locked'
+      // Finished only when the LAST event is. Completing on this event
+      // alone would close a three-week pool after week 1.
+      if (slate.every((t) => t.status === 'completed')) poolStatus = 'completed'
+      // Locked the moment the FIRST event does — one draft, one roster,
+      // riding every event.
+      else if (slate.some((t) => now >= t.lockTime)) poolStatus = 'locked'
     }
     if (poolStatus !== pool.status) {
       await db
