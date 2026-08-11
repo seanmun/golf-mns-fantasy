@@ -51,7 +51,21 @@ async function main() {
     WHERE table_schema = 'golf'
   `) as Array<{ cut_applied: boolean; is_withdrawn: boolean }>
 
+  const [orph] = (await sql`
+    SELECT count(*)::int AS n FROM golf.golfers WHERE external_id IS NULL
+  `) as Array<{ n: number }>
+  const [refs] = (await sql`
+    SELECT count(*)::int AS n FROM golf.pool_entries e
+    WHERE EXISTS (
+      SELECT 1 FROM jsonb_array_elements_text(e.golfer_ids) gid
+      JOIN golf.golfers g ON g.id = gid::uuid
+      WHERE g.external_id IS NULL
+    )
+  `) as Array<{ n: number }>
+
   console.log(`  pool_tournaments table   ${exists ? 'already exists' : 'MISSING — will create'}`)
+  console.log(`  golfers with no id       ${orph.n}  → WILL BE DELETED`)
+  console.log(`  of those, on a roster    ${refs.n}  ${refs.n === 0 ? '(safe)' : '← STOP, would break a roster'}`)
   console.log(`  tournaments.cut_applied  ${cols?.cut_applied ? 'already exists' : 'MISSING — will add'}`)
   console.log(`  results.is_withdrawn     ${cols?.is_withdrawn ? 'already exists' : 'MISSING — will add'}`)
   console.log(`  pools in this database   ${pools}`)
@@ -67,6 +81,17 @@ async function main() {
     console.log(`  pools needing a backfill row   ${missing}`)
   } else {
     console.log(`  pools needing a backfill row   ${pools} (all of them)`)
+  }
+
+  // The purge is the only destructive step here. It is safe purely
+  // because no roster references those rows — so verify that every run
+  // rather than trusting a check made once.
+  if (refs.n > 0) {
+    console.error(
+      `\n  ABORT: ${refs.n} pool entries reference golfers with no SlashGolf id.\n` +
+        `  Deleting them would blank out picks people already made.\n`
+    )
+    process.exit(1)
   }
 
   if (!apply) {
@@ -162,7 +187,47 @@ async function main() {
     WHERE pt.tournament_id <> p.tournament_id
   `) as Array<{ mismatched: number }>
 
-  console.log(`\n  pools with no events        ${missing}   ${missing === 0 ? '✓' : '← PROBLEM'}`)
+  // --- Purge the pre-SlashGolf golfer import ------------------------
+  // 224 rows from an older source: ASCII-folded names ("Ludvig Aberg"
+  // for "Ludvig Åberg") and NO SlashGolf playerId. The tournament sync
+  // matches on playerId, so these can never enter a field, be drafted,
+  // or score — they exist only to show up twice in the players list
+  // once the OWGR pull inserts the real row. Verified before writing
+  // this: ZERO of them appear in any pool roster, so nothing a user has
+  // ever picked is affected.
+  await sql`
+    DELETE FROM golf.golfer_results
+    WHERE golfer_id IN (SELECT id FROM golf.golfers WHERE external_id IS NULL)
+  `
+  await sql`
+    DELETE FROM golf.tournament_field
+    WHERE golfer_id IN (SELECT id FROM golf.golfers WHERE external_id IS NULL)
+  `
+  const purged = await sql`
+    DELETE FROM golf.golfers WHERE external_id IS NULL RETURNING id
+  `
+  console.log(`  ✓ purged ${purged.length} golfer(s) with no SlashGolf id`)
+
+  // Make the duplicate class structurally impossible from here on: a
+  // golfer with no playerId is invisible to the sync by construction,
+  // so there is no legitimate reason for one to exist.
+  await sql`
+    ALTER TABLE golf.golfers ALTER COLUMN external_id SET NOT NULL
+  `
+  await sql`
+    ALTER TABLE golf.golfers
+      ADD COLUMN IF NOT EXISTS updated_at timestamp NOT NULL DEFAULT now()
+  `
+  console.log('  ✓ external_id NOT NULL + updated_at column')
+
+  const [{ dupes }] = (await sql`
+    SELECT count(*)::int AS dupes FROM (
+      SELECT lower(name) FROM golf.golfers GROUP BY lower(name) HAVING count(*) > 1
+    ) d
+  `) as Array<{ dupes: number }>
+
+  console.log(`\n  duplicate golfer names      ${dupes}   ${dupes === 0 ? '✓' : '← check these'}`)
+  console.log(`  pools with no events        ${missing}   ${missing === 0 ? '✓' : '← PROBLEM'}`)
   console.log(`  first-event mismatches      ${mismatched}   ${mismatched === 0 ? '✓' : '← PROBLEM'}`)
 
   if (missing === 0 && mismatched === 0) {

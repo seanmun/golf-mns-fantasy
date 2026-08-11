@@ -76,6 +76,10 @@ export const golfGolfers = golfSchema.table('golfers', {
   // Aggregated from golf.golfer_results by recomputeSeasonStats.
   seasonStats: jsonb('season_stats').$type<GolferSeasonStats>(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
+  // Bumped by the OWGR sync. The cron reads the newest value to decide
+  // whether golfers are stale enough to re-pull, so it needs no extra
+  // bookkeeping table.
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 })
 
 // ─── TOURNAMENT FIELD ─────────────────────────────────────────────────────────

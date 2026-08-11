@@ -1,9 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { db } from '../_db.js'
-import { golfTournaments } from '../../src/lib/db/schema.js'
-import { inArray } from 'drizzle-orm'
+import { golfTournaments, golfGolfers } from '../../src/lib/db/schema.js'
+import { inArray, sql } from 'drizzle-orm'
 import { eq } from 'drizzle-orm'
 import { syncTournament } from '../../src/lib/scoring/syncTournament.js'
+import { syncGolfers } from '../../src/lib/scoring/syncGolfers.js'
 import { sgFetch, type SgTournamentInfo } from '../_slashgolf.js'
 
 // Automated sync. vercel.json fires this once per UTC hour (24 separate
@@ -53,6 +54,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // bypass the date/local-window gates to settle an event on demand.
     const onlyTournamentId = req.query.tournamentId as string | undefined
     const force = req.query.force === '1'
+
+    // Golfers first, and automatically.
+    //
+    // The tournament sync matches leaderboard rows to golfers by
+    // playerId and SKIPS anyone it doesn't know — silently, straight out
+    // of tournament_field and so out of every draft. That made the
+    // golfer table a hidden dependency of the whole pipeline while being
+    // the one piece that only ever ran when a human pressed a button.
+    // Six of the FedEx playoff field went missing exactly that way.
+    //
+    // One API call, one bulk upsert, at most once a day. Rankings move
+    // weekly, so daily is ample.
+    const GOLFER_MAX_AGE_MS = 20 * 60 * 60 * 1000
+    let golferSync: Record<string, unknown> = { ran: false }
+    const [freshest] = await db
+      .select({ newest: sql<Date | null>`max(${golfGolfers.updatedAt})` })
+      .from(golfGolfers)
+    const age = freshest?.newest ? now.getTime() - new Date(freshest.newest).getTime() : Infinity
+    if (force || age >= GOLFER_MAX_AGE_MS) {
+      try {
+        const r = await syncGolfers(db, now.getFullYear())
+        golferSync = { ran: true, ...r }
+      } catch (err) {
+        // Never let this sink the score sync — stale golfers are far
+        // better than no scores.
+        golferSync = { ran: true, failed: err instanceof Error ? err.message : String(err) }
+      }
+    } else {
+      golferSync = { ran: false, ageHours: Math.round(age / 3600000) }
+    }
 
     const candidates = await db
       .select()
@@ -117,7 +148,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    return res.status(200).json({ ranAt: now.toISOString(), tournaments: report })
+    return res.status(200).json({ ranAt: now.toISOString(), golfers: golferSync, tournaments: report })
   } catch (error) {
     console.error('GET /api/cron/sync-all error:', error)
     return res.status(500).json({ error: 'Internal server error' })

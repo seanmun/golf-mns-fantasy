@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "db:push": "drizzle-kit push",
     "db:migrate": "tsx scripts/migrate.ts",
+    "db:repair-scoring": "tsx scripts/repair-pool-scoring.ts",
     "db:seed": "npx tsx src/lib/db/seed.ts"
   },
   "dependencies": {

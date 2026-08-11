@@ -321,6 +321,22 @@ export function PoolDraft() {
               {countdown}
             </span>
           )}
+          {/* Late additions to the field can't otherwise reach a draft
+              that already exists. This upserts, so queues survive —
+              unlike Restart, which clears the whole board. */}
+          {isOwner && draft.status === 'setup' && (
+            <button
+              onClick={async () => {
+                const r = await poolAction('refresh_field')
+                if (r) toast.success(`Field refreshed — ${r.items} golfers`)
+              }}
+              disabled={busy}
+              className="px-3 py-1.5 rounded-lg text-xs border"
+              style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}
+            >
+              Refresh field
+            </button>
+          )}
           {isOwner && draft.status === 'setup' && (
             <button
               onClick={() => poolAction('start')}
