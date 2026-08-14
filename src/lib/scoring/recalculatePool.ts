@@ -2,16 +2,23 @@ import { eq, inArray } from 'drizzle-orm'
 import type { NeonHttpDatabase } from 'drizzle-orm/neon-http'
 import { golfPools, golfPoolEntries, golfGolferResults } from '../db/schema.js'
 import { poolTournamentRows } from '../db/poolTournaments.js'
+import { rostersForPool, rosterFor } from '../db/entryRosters.js'
 import { calculateGolferPoints, type ScoringConfig, type GolferStats } from './engine.js'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = NeonHttpDatabase<any>
 
-// cutApplied belongs to the TOURNAMENT, not the result row — it says
-// whether this event's cut has happened at all. Pass it in.
+// Both flags belong to the TOURNAMENT, not the result row: whether its
+// cut has happened, and whether it is over. Named rather than positional
+// so two booleans can never be passed in the wrong order.
+export interface EventState {
+  cutApplied: boolean
+  eventFinal: boolean
+}
+
 export function statsFromResult(
   result: typeof golfGolferResults.$inferSelect,
-  cutApplied: boolean
+  event: EventState
 ): GolferStats {
   return {
     hole_in_ones: result.holeInOnes,
@@ -24,7 +31,8 @@ export function statsFromResult(
     worse_than_double: result.worseThanDouble,
     is_cut: result.isCut,
     is_withdrawn: result.isWithdrawn,
-    cut_applied: cutApplied,
+    cut_applied: event.cutApplied,
+    event_final: event.eventFinal,
     position: result.position,
   }
 }
@@ -43,7 +51,12 @@ export async function recalculatePool(
 
   const events = await poolTournamentRows(db, pool)
   const tournamentIds = events.map((t) => t.id)
-  const cutAppliedBy = new Map(events.map((t) => [t.id, t.cutApplied]))
+  const stateBy = new Map<string, EventState>(
+    events.map((t) => [
+      t.id,
+      { cutApplied: t.cutApplied, eventFinal: t.status === 'completed' },
+    ])
+  )
   const results = await db
     .select()
     .from(golfGolferResults)
@@ -70,15 +83,22 @@ export async function recalculatePool(
     .from(golfPoolEntries)
     .where(eq(golfPoolEntries.poolId, pool.id))
 
+  // Score each event against the roster that was in force FOR THAT
+  // EVENT, not the team's current list. A golfer dropped after event 1
+  // keeps his event-1 points and earns nothing after; one added by
+  // waiver earns nothing before he arrived.
+  const rosters = await rostersForPool(db, pool.id, tournamentIds)
+
   const updates = entries.map((entry) => {
-    const golferIds = entry.golferIds as string[]
     let totalPoints = 0
-    for (const golferId of golferIds) {
-      for (const result of byGolfer.get(golferId) ?? []) {
-        totalPoints += calculateGolferPoints(
-          statsFromResult(result, cutAppliedBy.get(result.tournamentId) ?? false),
-          scoringConfig
+    for (const tournamentId of tournamentIds) {
+      const state = stateBy.get(tournamentId) ?? { cutApplied: false, eventFinal: false }
+      for (const golferId of rosterFor(rosters, entry.id, tournamentId)) {
+        const result = (byGolfer.get(golferId) ?? []).find(
+          (r) => r.tournamentId === tournamentId
         )
+        if (!result) continue
+        totalPoints += calculateGolferPoints(statsFromResult(result, state), scoringConfig)
       }
     }
     return { id: entry.id, totalPoints: String(Math.round(totalPoints * 100) / 100) }

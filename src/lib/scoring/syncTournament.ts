@@ -6,9 +6,9 @@ import {
   golfTournamentField,
   golfGolferResults,
   golfPools,
-  golfPoolEntries,
 } from '../db/schema.js'
 import { poolIdsForTournament, poolTournamentRows } from '../db/poolTournaments.js'
+import { rostersForPool } from '../db/entryRosters.js'
 import { recalculatePool } from './recalculatePool.js'
 import { recomputeSeasonStats } from './seasonStats.js'
 import { controlDraft } from '../../../api/_draftService.js'
@@ -94,13 +94,16 @@ export async function syncTournament(
           )
         : eq(golfPools.tournamentId, tournament.id)
     )
+  // Whose scorecards to pull. Must be the roster in force AT THIS
+  // EVENT, not each team's flat list — after a waiver those differ, and
+  // getting it wrong means the hole-by-hole drilldown is blank for
+  // exactly the golfers people just added.
   const pickedGolferIds = new Set<string>()
-  if (pools.length > 0) {
-    const entries = await db
-      .select({ golferIds: golfPoolEntries.golferIds })
-      .from(golfPoolEntries)
-      .where(inArray(golfPoolEntries.poolId, pools.map((p) => p.id)))
-    for (const e of entries) for (const id of e.golferIds as string[]) pickedGolferIds.add(id)
+  for (const pool of pools) {
+    const rosters = await rostersForPool(db, pool.id, [tournament.id])
+    for (const byTournament of rosters.values()) {
+      for (const id of byTournament.get(tournament.id) ?? []) pickedGolferIds.add(id)
+    }
   }
 
   const withdrawnRefs: string[] = []

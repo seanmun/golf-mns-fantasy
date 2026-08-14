@@ -3,6 +3,7 @@ import { db } from '../_db.js'
 import { golfPools, golfPoolEntries, golfGolfers, golfGolferResults, users } from '../../src/lib/db/schema.js'
 import { eq, inArray } from 'drizzle-orm'
 import { poolTournamentRows } from '../../src/lib/db/poolTournaments.js'
+import { rostersForPool, rosterFor } from '../../src/lib/db/entryRosters.js'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
@@ -49,26 +50,50 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       : []
     const resultMap = new Map(results.map((r) => [`${r.tournamentId}:${r.golferId}`, r]))
 
-    // Get all golfer names
-    const allGolferIds = [...new Set(entries.flatMap((e) => e.golferIds as string[]))]
+    // Who counted at each event. After a waiver these differ per event,
+    // so the board is grouped by event rather than showing one flat list
+    // in which nobody can tell who was actually scoring when.
+    const rosters = await rostersForPool(db, pool.id, tournamentIds)
+
+    const allGolferIds = [
+      ...new Set([
+        ...entries.flatMap((e) => e.golferIds as string[]),
+        ...[...rosters.values()].flatMap((byT) => [...byT.values()].flat()),
+      ]),
+    ]
     const golfers = allGolferIds.length
       ? await db.select().from(golfGolfers).where(inArray(golfGolfers.id, allGolferIds))
       : []
     const golferMap = Object.fromEntries(golfers.map((g) => [g.id, g]))
 
-    const leaderboard = entries.map((entry) => ({
-      ...entry,
-      golfers: (entry.golferIds as string[]).map((gid) => ({
-        golfer: golferMap[gid] || null,
-        // One results row per event the golfer actually played; events
-        // they didn't advance to are simply absent.
-        byTournament: Object.fromEntries(
-          tournamentIds
-            .map((tid) => [tid, resultMap.get(`${tid}:${gid}`) ?? null])
-            .filter(([, r]) => r !== null)
-        ),
-      })),
-    }))
+    const leaderboard = entries.map((entry) => {
+      const byEvent = Object.fromEntries(
+        tournamentIds.map((tid) => [
+          tid,
+          rosterFor(rosters, entry.id, tid).map((gid) => ({
+            golfer: golferMap[gid] || null,
+            results: resultMap.get(`${tid}:${gid}`) ?? null,
+          })),
+        ])
+      )
+      // Everyone who ever counted for this team, for the roster summary.
+      const everGolferIds = [
+        ...new Set(tournamentIds.flatMap((tid) => rosterFor(rosters, entry.id, tid))),
+      ]
+      return {
+        ...entry,
+        rosterByEvent: byEvent,
+        golfers: everGolferIds.map((gid) => ({
+          golfer: golferMap[gid] || null,
+          byTournament: Object.fromEntries(
+            tournamentIds
+              .filter((tid) => rosterFor(rosters, entry.id, tid).includes(gid))
+              .map((tid) => [tid, resultMap.get(`${tid}:${gid}`) ?? null])
+              .filter(([, r]) => r !== null)
+          ),
+        })),
+      }
+    })
 
     return res.status(200).json({
       leaderboard,

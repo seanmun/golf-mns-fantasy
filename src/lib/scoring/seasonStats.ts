@@ -7,7 +7,7 @@ import {
   type GolferSeasonStats,
 } from '../db/schema.js'
 import { calculateGolferPoints, DEFAULT_SCORING } from './engine.js'
-import { statsFromResult } from './recalculatePool.js'
+import { statsFromResult, type EventState } from './recalculatePool.js'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = NeonHttpDatabase<any>
@@ -17,12 +17,22 @@ type Db = NeonHttpDatabase<any>
 // default. Returns the number of golfers updated.
 export async function recomputeSeasonStats(db: Db, season: number): Promise<number> {
   const tournaments = await db
-    .select({ id: golfTournaments.id, cutApplied: golfTournaments.cutApplied })
+    .select({
+      id: golfTournaments.id,
+      cutApplied: golfTournaments.cutApplied,
+      status: golfTournaments.status,
+    })
     .from(golfTournaments)
     .where(eq(golfTournaments.season, season))
   if (tournaments.length === 0) return 0
   const tournamentIds = tournaments.map((t) => t.id)
   const cutAppliedBy = new Map(tournaments.map((t) => [t.id, t.cutApplied]))
+  const stateBy = new Map<string, EventState>(
+    tournaments.map((t) => [
+      t.id,
+      { cutApplied: t.cutApplied, eventFinal: t.status === 'completed' },
+    ])
+  )
 
   const results = await db
     .select()
@@ -42,7 +52,7 @@ export async function recomputeSeasonStats(db: Db, season: number): Promise<numb
       (sum, r) =>
         sum +
         calculateGolferPoints(
-          statsFromResult(r, cutAppliedBy.get(r.tournamentId) ?? false),
+          statsFromResult(r, stateBy.get(r.tournamentId) ?? { cutApplied: false, eventFinal: false }),
           DEFAULT_SCORING
         ),
       0

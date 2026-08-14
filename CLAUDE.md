@@ -74,11 +74,26 @@ add up to the total above it.
 Placement pays to 30th and **ties take the full value**: `parsePosition`
 maps `"T3"` to `3`, so a five-way T3 is five × the 3rd-place bonus.
 
+Finish bonuses require `event_final` (the tournament being `completed`).
+`position` is rewritten on every sync, so mid-round it is a LIVE
+standing — without the gate, a player three holes into Thursday sat in
+first and collected the winner's bonus, then lost it an hour later.
+Both tournament-level flags travel together in `EventState`
+(`{ cutApplied, eventFinal }`) rather than as loose booleans, because
+two adjacent bare booleans are trivially passed in the wrong order.
+
 Each event in a pool scores independently and the totals add — so a
 golfer who plays all three playoff events can earn up to three finish
 bonuses. That is intended. `golfer_results` has no unique constraint on
 `(tournament_id, golfer_id)`, so `recalculatePool` dedupes per event
 before summing; without that a stray duplicate row would double-pay.
+
+Rosters are **per event**, not per pool: `golf.pool_entry_rosters` holds
+who counted for a team at each tournament, so a waiver can move a golfer
+without rewriting history. A dropped golfer keeps the points he already
+earned and scores nothing after; an added one scores nothing before.
+Read it through `src/lib/db/entryRosters.ts`, never `golferIds` — that
+column is now only the current roster, kept for display.
 
 Scoring is **frozen into each pool at creation** (`pools.scoring_config`
 jsonb). Changing the defaults never rescores an existing pool — a pool

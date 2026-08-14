@@ -100,6 +100,10 @@ function ScoringLegend({ config, eventCount }: { config: ScoringConfig; eventCou
         <p className="mt-1.5 text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
           Every golfer on your team scores; round columns show hole points only, the total adds cut and finish bonuses.
         </p>
+        <p className="mt-1.5 text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+          Finish bonuses are awarded when an event <strong>ends</strong>, not while it's in play — a
+          player leading after three holes on Thursday hasn't finished first.
+        </p>
         {eventCount > 1 && (
           <p className="mt-1.5 text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
             This pool spans {eventCount} events. Each one scores separately — including its own cut
@@ -127,7 +131,16 @@ function roundPoints(entry: any, config: ScoringConfig, tournamentId: string): R
   return totals
 }
 
-function golferPoints(results: any, config: ScoringConfig, cutApplied: boolean): number {
+// Mirrors calculateGolferPoints. `event` carries the tournament-level
+// flags: whether its cut has landed, and whether it is over. Finish
+// bonuses are settled results, so they only appear once it is.
+interface EventState { cutApplied: boolean; eventFinal: boolean }
+const stateOf = (t: any): EventState => ({
+  cutApplied: !!t?.cutApplied,
+  eventFinal: t?.status === 'completed',
+})
+
+function golferPoints(results: any, config: ScoringConfig, event: EventState): number {
   return calculateGolferPoints(
     {
       hole_in_ones: results.holeInOnes,
@@ -140,40 +153,20 @@ function golferPoints(results: any, config: ScoringConfig, cutApplied: boolean):
       worse_than_double: results.worseThanDouble,
       is_cut: results.isCut,
       is_withdrawn: !!results.isWithdrawn,
-      cut_applied: cutApplied,
+      cut_applied: event.cutApplied,
+      event_final: event.eventFinal,
       position: results.position,
     },
     config
   )
 }
 
-// A team's points from one event only. Takes the tournament, not its id,
-// because the cut state lives on it — typed so passing an id is a
-// compile error rather than a silent zero.
-interface EventRef {
-  id: string
-  cutApplied?: boolean
-}
-
-function entryPointsForEvent(entry: any, config: ScoringConfig, tournament: EventRef): number {
+// A team's points from one event only.
+function entryPointsForEvent(entry: any, config: ScoringConfig, tournament: any): number {
   let total = 0
   for (const g of entry.golfers ?? []) {
     const results = g.byTournament?.[tournament.id]
-    if (results) total += golferPoints(results, config, !!tournament.cutApplied)
-  }
-  return Math.round(total * 100) / 100
-}
-
-// A golfer's points across every event they played in this pool.
-function golferTotal(
-  byTournament: Record<string, any>,
-  config: ScoringConfig,
-  tournaments: EventRef[]
-): number {
-  let total = 0
-  for (const t of tournaments) {
-    const r = byTournament?.[t.id]
-    if (r) total += golferPoints(r, config, !!t.cutApplied)
+    if (results) total += golferPoints(results, config, stateOf(tournament))
   }
   return Math.round(total * 100) / 100
 }
@@ -224,11 +217,11 @@ function holeColor(score: number, par: number) {
 function PointsBreakdown({
   results,
   config,
-  cutApplied,
+  event,
 }: {
   results: any
   config: ScoringConfig
-  cutApplied: boolean
+  event: EventState
 }) {
   const rounds: Array<{ round: number; holes: Record<string, { score: number; par: number }> }> =
     results?.scorecards ?? []
@@ -240,9 +233,14 @@ function PointsBreakdown({
   // Mirrors calculateGolferPoints exactly — if these drift, the
   // breakdown stops adding up to the total shown above it.
   const cutBonus =
-    cutApplied && results && !results.isCut && !results.isWithdrawn ? config.made_cut_bonus : 0
+    event.cutApplied && results && !results.isCut && !results.isWithdrawn
+      ? config.made_cut_bonus
+      : 0
+  // Live position is a standing, not a finish — no bonus until final.
   const finishBonus =
-    results?.position != null ? (config.position_bonuses?.[String(results.position)] ?? 0) : 0
+    event.eventFinal && results?.position != null
+      ? (config.position_bonuses?.[String(results.position)] ?? 0)
+      : 0
   const total = Math.round((holeTotal + cutBonus + finishBonus) * 100) / 100
   const sign = (n: number) => (n > 0 ? `+${n}` : `${n}`)
 
@@ -308,6 +306,74 @@ function ScorecardPanel({ scorecards }: { scorecards: Array<{ round: number; hol
                 )
               })}
             </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// The team that actually counted at ONE event. Shown per event rather
+// than as one merged list, because after a waiver a team's golfers
+// differ between events and a flat list gives no way to tell who was
+// scoring when.
+function EventRoster({
+  roster,
+  config,
+  event,
+  openGolfer,
+  setOpenGolfer,
+  keyPrefix,
+}: {
+  roster: Array<{ golfer: any; results: any }>
+  config: ScoringConfig
+  event: EventState
+  openGolfer: string | null
+  setOpenGolfer: (k: string | null) => void
+  keyPrefix: string
+}) {
+  if (!roster || roster.length === 0) return null
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2">
+      {roster.map(({ golfer, results }) => {
+        const key = `${keyPrefix}:${golfer?.id}`
+        const isOpen = openGolfer === key
+        return (
+          <div key={key} className={isOpen ? 'col-span-2 sm:col-span-3' : ''}>
+            <button
+              onClick={() => setOpenGolfer(isOpen ? null : key)}
+              className="w-full flex items-center justify-between px-3 py-2 rounded-lg transition-colors"
+              style={{
+                background: 'var(--color-surface-2)',
+                outline: isOpen ? '1px solid var(--color-green-muted)' : 'none',
+              }}
+            >
+              <span className="text-xs truncate text-left" style={{ color: 'var(--color-text-secondary)' }}>
+                {golfer?.name || 'Unknown'}
+              </span>
+              {results ? (
+                <ScoreBadge score={golferPoints(results, config, event)} />
+              ) : (
+                <span className="text-xs font-mono" style={{ color: 'var(--color-text-muted)' }}>—</span>
+              )}
+            </button>
+            {isOpen && results && (
+              <>
+                <PointsBreakdown results={results} config={config} event={event} />
+                {results.scorecards?.length ? (
+                  <ScorecardPanel scorecards={results.scorecards} />
+                ) : (
+                  <p className="mt-2 px-3 py-2 rounded-lg text-[11px]" style={{ background: 'var(--color-surface)', color: 'var(--color-text-muted)' }}>
+                    Hole-by-hole appears after the next stats sync.
+                  </p>
+                )}
+              </>
+            )}
+            {isOpen && !results && (
+              <p className="mt-2 px-3 py-2 rounded-lg text-[11px]" style={{ background: 'var(--color-surface)', color: 'var(--color-text-muted)' }}>
+                Didn't play this event.
+              </p>
+            )}
           </div>
         )
       })}
@@ -443,109 +509,52 @@ export function PoolLeaderboard() {
                   </span>
                 </div>
 
-                {/* Per-round team fantasy points (hole scoring; the total
-                    also includes cut/position bonuses). A multi-week pool
-                    gets one strip per event so rounds never stack. */}
-                {tournaments.map((t: any) => {
-                  const rp = roundPoints(entry, config, t.id)
-                  const played = Object.keys(rp).length > 0
-                  if (!isMulti) {
-                    return played ? <div key={t.id} className="mb-3"><RoundStrip rp={rp} /></div> : null
-                  }
-                  return (
-                    <div key={t.id} className="mb-3">
-                      <div className="flex items-baseline justify-between mb-1">
-                        <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-secondary)' }}>
-                          {t.name}
-                        </span>
-                        <span className="text-xs font-mono" style={{ color: played ? 'var(--color-green-primary)' : 'var(--color-text-muted)' }}>
-                          {played ? `${entryPointsForEvent(entry, config, t)} pts` : 'not started'}
-                        </span>
-                      </div>
-                      {played && <RoundStrip rp={rp} />}
-                    </div>
-                  )
-                })}
-
-                {/* Players dropdown */}
+                {/* Players toggle, then one block per event: its own
+                    roster, its own points, its own Rd 1-4. Grouping this
+                    way is what makes a waiver readable - you can see who
+                    was on the team WHEN each event was played. */}
                 <button
                   onClick={() => setOpenEntry(openEntry === entry.id ? null : entry.id)}
-                  className="w-full py-1.5 rounded-lg text-xs font-medium mb-2 transition-colors"
+                  className="w-full py-1.5 rounded-lg text-xs font-medium mb-3 transition-colors"
                   style={{
                     background: 'transparent',
                     border: '1px solid var(--color-border)',
                     color: 'var(--color-text-secondary)',
                   }}
                 >
-                  {openEntry === entry.id ? 'Hide players ▴' : 'View players ▾'}
+                  {openEntry === entry.id ? 'Hide players \u25b4' : 'View players \u25be'}
                 </button>
 
-                {/* Golfer breakdown — tap a golfer for hole-by-hole */}
-                {openEntry === entry.id && (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {entry.golfers.map(({ golfer, byTournament }: any) => {
-                    const key = `${entry.id}:${golfer?.id}`
-                    const isOpen = openGolfer === key
-                    const playedIn = tournaments.filter((t: any) => byTournament?.[t.id])
-                    return (
-                      <div key={golfer?.id || Math.random()} className={isOpen ? 'col-span-2 sm:col-span-3' : ''}>
-                        <button
-                          onClick={() => setOpenGolfer(isOpen ? null : key)}
-                          className="w-full flex items-center justify-between px-3 py-2 rounded-lg transition-colors"
-                          style={{
-                            background: 'var(--color-surface-2)',
-                            outline: isOpen ? '1px solid var(--color-green-muted)' : 'none',
-                          }}
-                        >
-                          <span className="text-xs truncate text-left" style={{ color: 'var(--color-text-secondary)' }}>
-                            {golfer?.name || 'Unknown'}
-                            {isMulti && (
-                              <span className="block text-[10px]" style={{ color: 'var(--color-text-muted)' }}>
-                                {playedIn.length}/{tournaments.length} events
-                              </span>
-                            )}
+                {tournaments.map((t: any) => {
+                  const rp = roundPoints(entry, config, t.id)
+                  const played = Object.keys(rp).length > 0
+                  const roster = entry.rosterByEvent?.[t.id] ?? []
+                  return (
+                    <div key={t.id} className="mb-3">
+                      {isMulti && (
+                        <div className="flex items-baseline justify-between mb-1">
+                          <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--color-text-secondary)' }}>
+                            {t.name}
                           </span>
-                          {playedIn.length > 0 ? (
-                            <ScoreBadge score={golferTotal(byTournament, config, tournaments)} />
-                          ) : (
-                            <span className="text-xs font-mono" style={{ color: 'var(--color-text-muted)' }}>-</span>
-                          )}
-                        </button>
-                        {isOpen && (
-                          <>
-                            {playedIn.length === 0 ? (
-                              <p className="mt-2 px-3 py-2 rounded-lg text-[11px]" style={{ background: 'var(--color-surface)', color: 'var(--color-text-muted)' }}>
-                                No scores yet.
-                              </p>
-                            ) : (
-                              playedIn.map((t: any) => {
-                                const results = byTournament[t.id]
-                                return (
-                                  <div key={t.id} className="mt-2">
-                                    {isMulti && (
-                                      <div className="text-[10px] font-bold uppercase tracking-wide px-1" style={{ color: 'var(--color-text-secondary)' }}>
-                                        {t.name}
-                                      </div>
-                                    )}
-                                    <PointsBreakdown results={results} config={config} cutApplied={!!t.cutApplied} />
-                                    {results.scorecards?.length ? (
-                                      <ScorecardPanel scorecards={results.scorecards} />
-                                    ) : (
-                                      <p className="mt-2 px-3 py-2 rounded-lg text-[11px]" style={{ background: 'var(--color-surface)', color: 'var(--color-text-muted)' }}>
-                                        Hole-by-hole appears after the next stats sync.
-                                      </p>
-                                    )}
-                                  </div>
-                                )
-                              })
-                            )}
-                          </>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-                )}
+                          <span className="text-xs font-mono" style={{ color: played ? 'var(--color-green-primary)' : 'var(--color-text-muted)' }}>
+                            {played ? `${entryPointsForEvent(entry, config, t)} pts` : 'not started'}
+                          </span>
+                        </div>
+                      )}
+                      {played && <RoundStrip rp={rp} />}
+                      {openEntry === entry.id && (
+                        <EventRoster
+                          roster={roster}
+                          config={config}
+                          event={stateOf(t)}
+                          openGolfer={openGolfer}
+                          setOpenGolfer={setOpenGolfer}
+                          keyPrefix={`${entry.id}:${t.id}`}
+                        />
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             )
           })}

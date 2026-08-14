@@ -52,6 +52,12 @@ export interface GolferStats {
   // like the playoffs — where nobody can make a cut because there isn't
   // one. See cutApplied on golf.tournaments.
   cut_applied: boolean
+  // Whether the event is over. position is stored on every sync, so
+  // mid-round it holds a LIVE standing: a player three holes into
+  // Thursday can sit in first and collect the winner's bonus, then lose
+  // it an hour later. A finish bonus is a result, not a standing — it
+  // pays only once the event is final.
+  event_final: boolean
   position: number | null
 }
 
@@ -72,7 +78,7 @@ export function calculateGolferPoints(stats: GolferStats, config: ScoringConfig)
     points += config.made_cut_bonus
   }
 
-  if (stats.position !== null) {
+  if (stats.event_final && stats.position !== null) {
     const posBonus = config.position_bonuses[String(stats.position)]
     if (posBonus) points += posBonus
   }

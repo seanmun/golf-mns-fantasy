@@ -5,12 +5,14 @@ import { verifyAuth } from '../_middleware.js'
 import {
   golfPools,
   golfPoolEntries,
+  golfPoolEntryRosters,
   golfTournaments,
   golfTournamentField,
   golfGolfers,
   users,
 } from '../../src/lib/db/schema.js'
 import { poolTournamentIds, poolTournamentRows } from '../../src/lib/db/poolTournaments.js'
+import { writeRosters } from '../../src/lib/db/entryRosters.js'
 import {
   createDraft,
   controlDraft,
@@ -221,6 +223,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // re-sync everything so the next start uses current settings.
     if (action === 'restart') {
       await controlDraft(pool.draftId, { action: 'reset' })
+      const entryIds = await db
+        .select({ id: golfPoolEntries.id })
+        .from(golfPoolEntries)
+        .where(eq(golfPoolEntries.poolId, pool.id))
+      // Per-event rosters are written from the board, so a reset board
+      // must clear them too — otherwise the old draft keeps scoring.
+      if (entryIds.length > 0) {
+        await db
+          .delete(golfPoolEntryRosters)
+          .where(inArray(golfPoolEntryRosters.entryId, entryIds.map((e) => e.id)))
+      }
       await db
         .update(golfPoolEntries)
         .set({ golferIds: [], submittedAt: null, updatedAt: new Date() })
@@ -283,12 +296,26 @@ export async function syncDraftToEntries(poolId: string, draftId: string) {
     picksByUser.set(uid, list)
   }
 
+  // The drafted team is the roster for EVERY event in the pool. Writing
+  // all of them up front means there is always a roster to score
+  // against; waivers later rewrite only the events still to come.
+  const [pool] = await db
+    .select({ id: golfPools.id, tournamentId: golfPools.tournamentId })
+    .from(golfPools)
+    .where(eq(golfPools.id, poolId))
+    .limit(1)
+  const tournamentIds = pool ? await poolTournamentIds(db, pool) : []
+
   let entriesUpdated = 0
   for (const [uid, golferIds] of picksByUser) {
-    await db
+    const [entry] = await db
       .update(golfPoolEntries)
       .set({ golferIds, submittedAt: new Date(), updatedAt: new Date() })
       .where(and(eq(golfPoolEntries.poolId, poolId), eq(golfPoolEntries.userId, uid)))
+      .returning({ id: golfPoolEntries.id })
+    if (entry && tournamentIds.length > 0) {
+      await writeRosters(db, entry.id, tournamentIds, golferIds)
+    }
     entriesUpdated++
   }
   return { draftStatus: state.draft.status, entriesUpdated }

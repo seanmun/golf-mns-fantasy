@@ -225,6 +225,31 @@ export const golfPoolEntries = golfSchema.table('pool_entries', {
   index('golf_entries_pool_user_idx').on(t.poolId, t.userId),
 ])
 
+// ─── PER-EVENT ROSTERS ────────────────────────────────────────────────────────
+
+// Who counted for a team AT A GIVEN EVENT.
+//
+// pool_entries.golferIds is a flat list, which is fine until a waiver
+// moves someone mid-pool: a dropped golfer must KEEP the points he
+// already earned but score nothing afterwards, and an added golfer must
+// score nothing before he arrived. A flat list cannot express either.
+//
+// Rows are written for every event in the pool the moment the draft
+// finishes, so a roster always exists to score against. Waivers then
+// rewrite the rows for later events only — history is never edited.
+export const golfPoolEntryRosters = golfSchema.table('pool_entry_rosters', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  entryId: uuid('entry_id').notNull().references(() => golfPoolEntries.id),
+  tournamentId: uuid('tournament_id').notNull().references(() => golfTournaments.id),
+  golferId: uuid('golfer_id').notNull().references(() => golfGolfers.id),
+  // Set when a waiver brought them in, so the UI can badge them.
+  addedAt: timestamp('added_at'),
+}, (t) => [
+  unique('golf_entry_roster_key').on(t.entryId, t.tournamentId, t.golferId),
+  index('golf_entry_roster_entry_idx').on(t.entryId, t.tournamentId),
+  index('golf_entry_roster_tournament_idx').on(t.tournamentId),
+])
+
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
 export type GolfUser = typeof users.$inferSelect
@@ -234,6 +259,7 @@ export type GolfTournamentField = typeof golfTournamentField.$inferSelect
 export type GolfGolferResults = typeof golfGolferResults.$inferSelect
 export type GolfPool = typeof golfPools.$inferSelect
 export type GolfPoolTournament = typeof golfPoolTournaments.$inferSelect
+export type GolfPoolEntryRoster = typeof golfPoolEntryRosters.$inferSelect
 export type GolfPoolEntry = typeof golfPoolEntries.$inferSelect
 export type NewGolfPool = typeof golfPools.$inferInsert
 export type NewGolfPoolEntry = typeof golfPoolEntries.$inferInsert

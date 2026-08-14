@@ -187,6 +187,49 @@ async function main() {
     WHERE pt.tournament_id <> p.tournament_id
   `) as Array<{ mismatched: number }>
 
+  // --- Per-event rosters --------------------------------------------
+  // A flat golferIds list can't survive a waiver: a dropped golfer must
+  // keep the points he already earned and score nothing after, and an
+  // added one must score nothing before. Rosters are per (entry, event).
+  await sql`
+    CREATE TABLE IF NOT EXISTS golf.pool_entry_rosters (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      entry_id uuid NOT NULL REFERENCES golf.pool_entries(id),
+      tournament_id uuid NOT NULL REFERENCES golf.tournaments(id),
+      golfer_id uuid NOT NULL REFERENCES golf.golfers(id),
+      added_at timestamp
+    )
+  `
+  await sql`
+    DO $$ BEGIN
+      ALTER TABLE golf.pool_entry_rosters
+        ADD CONSTRAINT golf_entry_roster_key UNIQUE (entry_id, tournament_id, golfer_id);
+    EXCEPTION WHEN duplicate_table THEN NULL; WHEN duplicate_object THEN NULL;
+    END $$
+  `
+  await sql`
+    CREATE INDEX IF NOT EXISTS golf_entry_roster_entry_idx
+      ON golf.pool_entry_rosters (entry_id, tournament_id)
+  `
+  await sql`
+    CREATE INDEX IF NOT EXISTS golf_entry_roster_tournament_idx
+      ON golf.pool_entry_rosters (tournament_id)
+  `
+  console.log('  ✓ pool_entry_rosters table')
+
+  // Backfill: every drafted team's current list becomes its roster for
+  // every event in its pool. Correct because no waiver has run yet.
+  const rosterRows = await sql`
+    INSERT INTO golf.pool_entry_rosters (entry_id, tournament_id, golfer_id)
+    SELECT e.id, pt.tournament_id, gid::uuid
+    FROM golf.pool_entries e
+    JOIN golf.pool_tournaments pt ON pt.pool_id = e.pool_id
+    JOIN jsonb_array_elements_text(e.golfer_ids) gid ON true
+    ON CONFLICT ON CONSTRAINT golf_entry_roster_key DO NOTHING
+    RETURNING id
+  `
+  console.log(`  ✓ backfilled ${rosterRows.length} roster row(s)`)
+
   // --- Purge the pre-SlashGolf golfer import ------------------------
   // 224 rows from an older source: ASCII-folded names ("Ludvig Aberg"
   // for "Ludvig Åberg") and NO SlashGolf playerId. The tournament sync
