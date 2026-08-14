@@ -256,6 +256,17 @@ export function PoolDetail() {
         >
           Leaderboard
         </Link>
+        {/* Only worth showing on a pool that has a between-events window
+            at all — a single-event pool never gets one. */}
+        {isMember && isMulti && (
+          <Link
+            to={`/pools/${poolId}/waivers`}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium text-sm border"
+            style={{ borderColor: 'var(--color-border)', color: 'var(--color-text-secondary)' }}
+          >
+            Waivers
+          </Link>
+        )}
       </div>
 
       {/* Members */}

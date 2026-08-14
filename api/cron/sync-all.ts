@@ -1,10 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { db } from '../_db.js'
-import { golfTournaments, golfGolfers } from '../../src/lib/db/schema.js'
+import { golfTournaments, golfGolfers, golfPools } from '../../src/lib/db/schema.js'
 import { inArray, sql } from 'drizzle-orm'
 import { eq } from 'drizzle-orm'
 import { syncTournament } from '../../src/lib/scoring/syncTournament.js'
 import { syncGolfers } from '../../src/lib/scoring/syncGolfers.js'
+import { processWaivers } from '../../src/lib/waivers/engine.js'
 import { sgFetch, type SgTournamentInfo } from '../_slashgolf.js'
 
 // Automated sync. vercel.json fires this once per UTC hour (24 separate
@@ -148,7 +149,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    return res.status(200).json({ ranAt: now.toISOString(), golfers: golferSync, tournaments: report })
+    // Waivers, after the syncs — processing reads standings for priority
+    // order, so it must run on fresh scores, and it needs the upcoming
+    // event's field, which the sync above is what populates.
+    //
+    // Deliberately folded into this hourly cron rather than given its
+    // own schedule: Vercel Hobby caps cron entries and this file already
+    // owns all 24. processWaivers is a no-op until its due time, so
+    // running it hourly costs one query per multi-event pool.
+    const waiverReport: Array<Record<string, unknown>> = []
+    try {
+      const multiPools = await db
+        .select()
+        .from(golfPools)
+        .where(inArray(golfPools.status, ['open', 'locked', 'active']))
+      for (const pool of multiPools) {
+        try {
+          const r = await processWaivers(db, pool)
+          if (r.processed && (r.granted.length > 0 || r.failed.length > 0)) {
+            waiverReport.push({ pool: pool.name, ...r })
+          }
+        } catch (err) {
+          waiverReport.push({
+            pool: pool.name,
+            failed: err instanceof Error ? err.message : String(err),
+          })
+        }
+      }
+    } catch (err) {
+      console.error('waiver pass failed:', err)
+    }
+
+    return res.status(200).json({
+      ranAt: now.toISOString(),
+      golfers: golferSync,
+      tournaments: report,
+      waivers: waiverReport,
+    })
   } catch (error) {
     console.error('GET /api/cron/sync-all error:', error)
     return res.status(500).json({ error: 'Internal server error' })

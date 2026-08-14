@@ -250,6 +250,41 @@ export const golfPoolEntryRosters = golfSchema.table('pool_entry_rosters', {
   index('golf_entry_roster_tournament_idx').on(t.tournamentId),
 ])
 
+// ─── WAIVERS ──────────────────────────────────────────────────────────────────
+
+export type WaiverStatus = 'pending' | 'granted' | 'failed' | 'cancelled'
+
+// One add/drop request, for ONE upcoming event.
+//
+// The unique (entryId, tournamentId) is the rule, not a convention: a
+// team gets a single transaction per window, so submitting again edits
+// the existing claim rather than queueing a second one.
+//
+// addGolferIds is an ORDERED preference list. The cap is on transactions
+// granted (exactly one), not on choices named — otherwise being sniped
+// by a higher-priority team leaves you with nothing at all, which
+// punishes you for someone else's pick.
+export const golfWaiverClaims = golfSchema.table('waiver_claims', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  poolId: uuid('pool_id').notNull().references(() => golfPools.id),
+  entryId: uuid('entry_id').notNull().references(() => golfPoolEntries.id),
+  // The event this claim takes effect for — the one about to be played.
+  tournamentId: uuid('tournament_id').notNull().references(() => golfTournaments.id),
+  addGolferIds: jsonb('add_golfer_ids').$type<string[]>().notNull().default([]),
+  dropGolferId: uuid('drop_golfer_id').notNull().references(() => golfGolfers.id),
+  status: text('status').$type<WaiverStatus>().notNull().default('pending'),
+  // Which choice actually landed, once processed.
+  grantedGolferId: uuid('granted_golfer_id').references(() => golfGolfers.id),
+  // Why it didn't, if it didn't — shown back to the owner.
+  failureReason: text('failure_reason'),
+  processedAt: timestamp('processed_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (t) => [
+  unique('golf_waiver_entry_tournament_key').on(t.entryId, t.tournamentId),
+  index('golf_waiver_pool_tournament_idx').on(t.poolId, t.tournamentId),
+])
+
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
 export type GolfUser = typeof users.$inferSelect
@@ -260,6 +295,7 @@ export type GolfGolferResults = typeof golfGolferResults.$inferSelect
 export type GolfPool = typeof golfPools.$inferSelect
 export type GolfPoolTournament = typeof golfPoolTournaments.$inferSelect
 export type GolfPoolEntryRoster = typeof golfPoolEntryRosters.$inferSelect
+export type GolfWaiverClaim = typeof golfWaiverClaims.$inferSelect
 export type GolfPoolEntry = typeof golfPoolEntries.$inferSelect
 export type NewGolfPool = typeof golfPools.$inferInsert
 export type NewGolfPoolEntry = typeof golfPoolEntries.$inferInsert

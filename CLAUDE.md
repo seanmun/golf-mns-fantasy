@@ -52,6 +52,38 @@ playoffs that is week 1 and nothing else — the BMW and TOUR Championship
 entry lists don't exist until the prior event ends. That's the game: you
 draft the 70, and each pick scores only as long as they keep advancing.
 
+## Waivers
+
+Between events only. A window opens when the previous event goes final
+(that is when the next field is known and you can see who was eliminated)
+and closes **24h before the next event locks** — everything derives from
+that one constant, so there is no schedule to keep in sync by hand.
+
+One transaction per team per window, enforced by the unique
+`(entry_id, tournament_id)` on `waiver_claims` — submitting again
+replaces the claim rather than queueing a second. `add_golfer_ids` is an
+ordered preference list: the cap is on transactions *granted*, not
+choices *named*, so being sniped costs you that golfer and not your
+whole move.
+
+Priority is **highest score first** (Sean's call, 2026-08-13; the usual
+inverse order was recommended and declined). Ties break on who joined
+earlier so the order never depends on row order.
+
+Processing runs from the hourly cron, after the syncs — it needs fresh
+standings for priority and the upcoming field to validate against. It
+rewrites rosters for the upcoming event *and every event after it*,
+never a played one.
+
+It runs unattended, so check it first:
+
+```
+npm run waivers -- "Pool Name"          # dry run, shows who gets whom
+npm run waivers -- "Pool Name" --apply
+```
+
+The dry run models contention exactly as the real pass does.
+
 ## Scoring
 
 Points come from hole-by-hole scorecards, not summary stats. An ace

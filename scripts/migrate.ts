@@ -230,6 +230,39 @@ async function main() {
   `
   console.log(`  ✓ backfilled ${rosterRows.length} roster row(s)`)
 
+  // --- Waiver claims -------------------------------------------------
+  // One row per team per window. The unique key IS the "one transaction
+  // per window" rule — submitting again updates this row rather than
+  // queueing a second claim.
+  await sql`
+    CREATE TABLE IF NOT EXISTS golf.waiver_claims (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      pool_id uuid NOT NULL REFERENCES golf.pools(id),
+      entry_id uuid NOT NULL REFERENCES golf.pool_entries(id),
+      tournament_id uuid NOT NULL REFERENCES golf.tournaments(id),
+      add_golfer_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
+      drop_golfer_id uuid NOT NULL REFERENCES golf.golfers(id),
+      status text NOT NULL DEFAULT 'pending',
+      granted_golfer_id uuid REFERENCES golf.golfers(id),
+      failure_reason text,
+      processed_at timestamp,
+      created_at timestamp NOT NULL DEFAULT now(),
+      updated_at timestamp NOT NULL DEFAULT now()
+    )
+  `
+  await sql`
+    DO $$ BEGIN
+      ALTER TABLE golf.waiver_claims
+        ADD CONSTRAINT golf_waiver_entry_tournament_key UNIQUE (entry_id, tournament_id);
+    EXCEPTION WHEN duplicate_table THEN NULL; WHEN duplicate_object THEN NULL;
+    END $$
+  `
+  await sql`
+    CREATE INDEX IF NOT EXISTS golf_waiver_pool_tournament_idx
+      ON golf.waiver_claims (pool_id, tournament_id)
+  `
+  console.log('  ✓ waiver_claims table')
+
   // --- Purge the pre-SlashGolf golfer import ------------------------
   // 224 rows from an older source: ASCII-folded names ("Ludvig Aberg"
   // for "Ludvig Åberg") and NO SlashGolf playerId. The tournament sync

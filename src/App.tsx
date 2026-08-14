@@ -10,6 +10,7 @@ import { PoolDetail } from '@/pages/pool/PoolDetail'
 import { PoolPick } from '@/pages/pool/PoolPick'
 import { PoolLeaderboard } from '@/pages/pool/PoolLeaderboard'
 import { PoolDraft } from '@/pages/pool/PoolDraft'
+import { PoolWaivers } from '@/pages/pool/PoolWaivers'
 import { PoolManage } from '@/pages/pool/PoolManage'
 import { AdminPanel } from '@/pages/admin/AdminPanel'
 import { Players } from '@/pages/Players'
@@ -62,6 +63,7 @@ export default function App() {
         <Route path="/pools/:poolId/manage" element={<ProtectedRoute><PoolManage /></ProtectedRoute>} />
         <Route path="/pools/:poolId/leaderboard" element={<PoolLeaderboard />} />
         <Route path="/pools/:poolId/draft" element={<ProtectedRoute><PoolDraft /></ProtectedRoute>} />
+        <Route path="/pools/:poolId/waivers" element={<ProtectedRoute><PoolWaivers /></ProtectedRoute>} />
         <Route path="/admin" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
         <Route path="*" element={<NotFound />} />
       </Route>
