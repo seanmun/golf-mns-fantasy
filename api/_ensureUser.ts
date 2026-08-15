@@ -11,7 +11,10 @@ export async function ensureUser(userId: string): Promise<void> {
   const user = await clerk.users.getUser(userId)
   const email = user.emailAddresses[0]?.emailAddress || ''
   const displayName =
-    [user.firstName, user.lastName].filter(Boolean).join(' ') || email.split('@')[0] || 'Player'
+    // Handle, never legal name — platform privacy rule (see workspace
+    // CLAUDE.md): username when the Clerk instance has them, else the
+    // email's local part. firstName/lastName deliberately unused.
+    user.username || email.split('@')[0] || 'Player'
   const avatarUrl = user.imageUrl || null
 
   await db

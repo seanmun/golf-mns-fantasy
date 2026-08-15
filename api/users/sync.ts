@@ -15,7 +15,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const user = await clerk.users.getUser(userId)
 
     const email = user.emailAddresses[0]?.emailAddress || ''
-    const displayName = [user.firstName, user.lastName].filter(Boolean).join(' ') || email.split('@')[0]
+    // Handle, never legal name — platform privacy rule.
+    const displayName = user.username || email.split('@')[0]
     const avatarUrl = user.imageUrl || null
 
     await db
