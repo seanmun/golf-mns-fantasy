@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import { useParams, Link } from 'react-router-dom'
 import { useUser } from '@clerk/clerk-react'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
+import { WaiverBanner } from '@/components/pool/WaiverBanner'
+import { useApi } from '@/lib/api/client'
 import { ScoreBadge } from '@/components/shared/ScoreBadge'
 import { ChevronLeft } from 'lucide-react'
 import {
@@ -400,15 +402,16 @@ function RoundStrip({ rp }: { rp: Record<number, number> }) {
 export function PoolLeaderboard() {
   const { poolId } = useParams<{ poolId: string }>()
   const { user } = useUser()
+  const { apiFetch } = useApi()
   const [openGolfer, setOpenGolfer] = useState<string | null>(null)
   const [openEntry, setOpenEntry] = useState<string | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['leaderboard', poolId],
     queryFn: async () => {
-      const res = await fetch(`/api/pools/leaderboard?poolId=${poolId}`)
-      if (!res.ok) throw new Error('Failed to load leaderboard')
-      const json = await res.json()
+      // Authenticated: the waiver banner needs to know whose roster it
+      // is looking at to say "2 of your 6 aren't in the field".
+      const json = (await apiFetch(`/api/pools/leaderboard?poolId=${poolId}`)) as any
       // Fire-and-forget: nudge the live score sync for every event still
       // in play. Server-side throttle means this only hits SlashGolf
       // every few hours no matter how many viewers are on the page.
@@ -427,7 +430,7 @@ export function PoolLeaderboard() {
 
   if (isLoading) return <LoadingSpinner />
 
-  const { leaderboard = [], pool, tournaments = [] } = data || {}
+  const { leaderboard = [], pool, tournaments = [], waiverWindow } = data || {}
   const config: ScoringConfig = pool?.scoringConfig ?? DEFAULT_SCORING
   const isMulti = tournaments.length > 1
   // The event whose sync state is worth reporting: the first one still
@@ -438,6 +441,7 @@ export function PoolLeaderboard() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-12">
+      <WaiverBanner poolId={poolId!} w={waiverWindow} />
       <div className="mb-8">
         <Link to={`/pools/${poolId}`} className="inline-flex items-center gap-1 text-sm mb-4"
           style={{ color: 'var(--color-text-muted)' }}>

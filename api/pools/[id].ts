@@ -9,6 +9,7 @@ import {
 } from '../../src/lib/db/schema.js'
 import { eq, count } from 'drizzle-orm'
 import { poolTournamentRows } from '../../src/lib/db/poolTournaments.js'
+import { waiverSummary } from '../../src/lib/waivers/summary.js'
 import { getDraftState, controlDraft } from '../_draftService.js'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -72,6 +73,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // know about multi-week pools keep rendering exactly what they did.
     const slate = await poolTournamentRows(db, pool)
 
+    const waiverWindow =
+      slate.length > 1
+        ? await (async () => {
+            const [full] = await db.select().from(golfPools).where(eq(golfPools.id, pool.id)).limit(1)
+            return full ? waiverSummary(db, full, userId) : null
+          })()
+        : null
+
     // The join code is the key to a private pool — only the owner and
     // people already in it get to see one.
     const canSeeJoinCode = !!userId && (userId === pool.createdBy || !!userEntry)
@@ -89,6 +98,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       })),
       entryCount: entryCount || 0,
       userEntry,
+      waiverWindow,
     })
   } catch (error) {
     console.error('GET /api/pools/[id] error:', error)

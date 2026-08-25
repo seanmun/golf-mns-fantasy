@@ -4,6 +4,7 @@ import { useParams, Link, useLocation } from 'react-router-dom'
 import { useUser } from '@clerk/clerk-react'
 import { Copy, Users, ChevronRight, Share2, CheckCircle, Circle, Settings } from 'lucide-react'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
+import { WaiverBanner } from '@/components/pool/WaiverBanner'
 import { useApi } from '@/lib/api/client'
 import { toast } from 'sonner'
 
@@ -24,6 +25,7 @@ export function PoolDetail() {
         tournaments: any[]
         entryCount: number
         userEntry: any
+        waiverWindow: any
       }>
     },
   })
@@ -31,7 +33,7 @@ export function PoolDetail() {
   if (isLoading) return <LoadingSpinner />
   if (!data) return null
 
-  const { pool, tournaments = [], entryCount, userEntry } = data
+  const { pool, tournaments = [], entryCount, userEntry, waiverWindow } = data
   // A multi-week pool scores several events; pool.tournament* still
   // describes the first, which is the one that locks it.
   const isMulti = tournaments.length > 1
@@ -40,6 +42,12 @@ export function PoolDetail() {
   const isOwner = user?.id === pool.createdBy
   const isMember = !!userEntry
   const isFull = pool.maxEntries != null && entryCount >= pool.maxEntries
+  // Once the draft is done and the first ball is struck, this stops
+  // being a setup page. Join codes, share links, "4/6 picked" and the
+  // draft room are all pre-draft affordances — leaving them up is why
+  // the page read as useless noise after the draft.
+  const drafted = pool.pickMode === 'draft' && !!pool.draftId && hasPicks
+  const inPlay = drafted && isLocked
   // Why a visitor can't join, in the same order the server rejects them.
   const blockedReason =
     pool.status === 'cancelled'
@@ -78,6 +86,8 @@ export function PoolDetail() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-12">
+      <WaiverBanner poolId={poolId!} w={waiverWindow} />
+
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-start justify-between">
@@ -156,8 +166,9 @@ export function PoolDetail() {
           )}
         </div>
 
-        {/* Join code + share link */}
-        {pool.joinCode && (
+        {/* Join code + share link — setup only. Nobody can join a
+            locked pool, so showing them after the draft is clutter. */}
+        {pool.joinCode && !inPlay && (
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border"
               style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
@@ -227,7 +238,7 @@ export function PoolDetail() {
 
       {/* Actions */}
       <div className="flex flex-wrap gap-3 mb-10">
-        {isMember &&
+        {isMember && !inPlay &&
           (pool.pickMode === 'draft' ? (
             <Link
               to={`/pools/${poolId}/draft`}
@@ -269,8 +280,9 @@ export function PoolDetail() {
         )}
       </div>
 
-      {/* Members */}
-      <MembersList poolId={poolId!} rosterSize={pool.rosterSize} />
+      {/* Who has picked matters while people are still picking. After
+          the draft it is 6/6 for everyone, forever — pure noise. */}
+      {!inPlay && <MembersList poolId={poolId!} rosterSize={pool.rosterSize} />}
 
       {/* League manager button */}
       {isOwner && (
@@ -285,18 +297,65 @@ export function PoolDetail() {
         </div>
       )}
 
-      {/* My picks preview */}
-      {hasPicks && (
-        <div className="rounded-xl border p-5" style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
-          <h3 className="font-display text-lg mb-3" style={{ color: 'var(--color-text-primary)' }}>YOUR PICKS</h3>
-          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-            {(userEntry.golferIds as string[]).length} golfers selected ·{' '}
-            <span className="font-mono" style={{ color: 'var(--color-green-primary)' }}>
-              {userEntry.totalPoints} pts
-            </span>
-          </p>
-        </div>
-      )}
+      {/* Your actual team, not a count of it. "6 golfers selected"
+          told you nothing you did not already know. */}
+      {inPlay && <MyTeam poolId={poolId!} />}
+    </div>
+  )
+}
+
+// Your team, with what each golfer has actually produced — and who is
+// out of the next field, which is the only thing you can act on.
+function MyTeam({ poolId }: { poolId: string }) {
+  const { data } = useQuery({
+    queryKey: ['pool-myteam', poolId],
+    queryFn: async () => {
+      const res = await fetch(`/api/pools/leaderboard?poolId=${poolId}`)
+      if (!res.ok) return null
+      return res.json()
+    },
+  })
+  const { user } = useUser()
+  if (!data) return null
+
+  const me = (data.leaderboard ?? []).find((e: any) => e.userId === user?.id)
+  if (!me) return null
+  const tournaments: any[] = data.tournaments ?? []
+  const live = tournaments.find((t) => t.status !== 'completed') ?? tournaments[tournaments.length - 1]
+  if (!live) return null
+
+  const roster: any[] = me.rosterByEvent?.[live.id] ?? []
+
+  return (
+    <div className="mb-10 rounded-xl border p-5"
+      style={{ background: 'var(--color-surface)', borderColor: 'var(--color-border)' }}>
+      <div className="flex items-baseline justify-between mb-1">
+        <h3 className="font-display text-lg" style={{ color: 'var(--color-text-primary)' }}>YOUR TEAM</h3>
+        <span className="font-mono font-bold" style={{ color: 'var(--color-green-primary)' }}>
+          {Number(me.totalPoints).toFixed(0)} pts · #{me.rank ?? '—'}
+        </span>
+      </div>
+      <p className="text-xs mb-3" style={{ color: 'var(--color-text-muted)' }}>{live.name}</p>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        {roster.map(({ golfer, results }: any) => (
+          <div key={golfer?.id} className="px-3 py-2 rounded-lg"
+            style={{ background: 'var(--color-surface-2)' }}>
+            <div className="text-xs truncate" style={{ color: 'var(--color-text-primary)' }}>
+              {golfer?.name ?? 'Unknown'}
+            </div>
+            <div className="text-[11px] font-mono"
+              style={{ color: results ? 'var(--color-green-primary)' : 'var(--color-text-muted)' }}>
+              {results
+                ? `${results.position ? `T${results.position} · ` : ''}${results.totalScore ?? 0 > 0 ? '+' : ''}${results.totalScore ?? 0}`
+                : 'not in this field'}
+            </div>
+          </div>
+        ))}
+      </div>
+      <Link to={`/pools/${poolId}/leaderboard`}
+        className="inline-block mt-3 text-xs underline" style={{ color: 'var(--color-text-secondary)' }}>
+        Full leaderboard and scorecards
+      </Link>
     </div>
   )
 }

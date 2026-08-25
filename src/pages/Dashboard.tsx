@@ -1,11 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useApi } from '@/lib/api/client'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
 import { EmptyState } from '@/components/shared/EmptyState'
 
 export function Dashboard() {
   const { apiFetch } = useApi()
+  const navigate = useNavigate()
 
   const { data, isLoading } = useQuery({
     queryKey: ['my-pools'],
@@ -67,7 +68,33 @@ export function Dashboard() {
             >
               <div className="flex items-start justify-between">
                 <div>
-                  <h3 className="font-semibold" style={{ color: 'var(--color-text-primary)' }}>{pool.name}</h3>
+                  <h3 className="font-semibold flex items-center gap-2" style={{ color: 'var(--color-text-primary)' }}>
+                    {pool.name}
+                    {pool.waiverOpen && (
+                      <span
+                        role="link"
+                        tabIndex={0}
+                        onClick={(e) => {
+                          // The card links to the leaderboard; this has to
+                          // beat it to the click or the badge is decoration.
+                          e.preventDefault()
+                          e.stopPropagation()
+                          navigate(`/pools/${pool.id}/waivers`)
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            navigate(`/pools/${pool.id}/waivers`)
+                          }
+                        }}
+                        className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide cursor-pointer"
+                        style={{ background: 'var(--color-green-primary)', color: '#000' }}
+                      >
+                        Waivers open →
+                      </span>
+                    )}
+                  </h3>
                   <p className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>
                     {pool.tournamentName}
                     {pool.eventCount > 1 && ` +${pool.eventCount - 1} more`}

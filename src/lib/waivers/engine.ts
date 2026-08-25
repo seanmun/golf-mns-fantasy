@@ -10,6 +10,9 @@ import {
   users,
 } from '../db/schema.js'
 import { poolTournamentRows } from '../db/poolTournaments.js'
+import { golfGolferResults } from '../db/schema.js'
+import { calculateGolferPoints, type ScoringConfig } from '../scoring/engine.js'
+import { statsFromResult } from '../scoring/recalculatePool.js'
 import { rostersForPool, rosterFor, writeRosters } from '../db/entryRosters.js'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -107,6 +110,12 @@ export async function waiverWindowFor(db: Db, pool: Pool): Promise<WaiverWindow>
 }
 
 // Golfers playing the upcoming event who nobody in this pool holds.
+//
+// Carries what a manager actually decides on: points already scored in
+// THIS pool's completed events, and how many of them they played. World
+// ranking is a poor proxy — a 60th-ranked player who has banked 130
+// points across two playoff events is a better add than a top-20 name
+// who limped through one.
 export async function freeAgentsFor(db: Db, pool: Pool, tournamentId: string) {
   const field = await db
     .select({
@@ -126,10 +135,51 @@ export async function freeAgentsFor(db: Db, pool: Pool, tournamentId: string) {
       )
     )
 
+  // Score them on the pool's OWN config, so the number shown is the
+  // number they would have contributed to this team.
+  const events = await poolTournamentRows(db, pool)
+  const played = events.filter((t) => t.status === 'completed')
+  const config = pool.scoringConfig as ScoringConfig
+  const points = new Map<string, number>()
+  const eventsPlayed = new Map<string, number>()
+
+  if (played.length > 0) {
+    const results = await db
+      .select()
+      .from(golfGolferResults)
+      .where(inArray(golfGolferResults.tournamentId, played.map((t) => t.id)))
+    const stateBy = new Map(
+      played.map((t) => [t.id, { cutApplied: t.cutApplied, eventFinal: true }])
+    )
+    // Dedupe per event first — golfer_results has no unique constraint
+    // on (tournament_id, golfer_id), so a stray row would double-count.
+    const seen = new Set<string>()
+    for (const r of results) {
+      const key = `${r.tournamentId}:${r.golferId}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      const state = stateBy.get(r.tournamentId)
+      if (!state) continue
+      points.set(
+        r.golferId,
+        Math.round(((points.get(r.golferId) ?? 0) + calculateGolferPoints(statsFromResult(r, state), config)) * 100) / 100
+      )
+      eventsPlayed.set(r.golferId, (eventsPlayed.get(r.golferId) ?? 0) + 1)
+    }
+  }
+
   const taken = await rosteredGolferIds(db, pool.id, tournamentId)
   return field
     .filter((g) => !taken.has(g.id))
+    .map((g) => ({
+      ...g,
+      points: points.get(g.id) ?? 0,
+      eventsPlayed: eventsPlayed.get(g.id) ?? 0,
+      totalPriorEvents: played.length,
+    }))
+    // Best available by what they have actually produced here.
     .sort((a, b) => {
+      if (b.points !== a.points) return b.points - a.points
       const ra = a.worldRanking ?? Number.MAX_SAFE_INTEGER
       const rb = b.worldRanking ?? Number.MAX_SAFE_INTEGER
       return ra !== rb ? ra - rb : a.name.localeCompare(b.name)

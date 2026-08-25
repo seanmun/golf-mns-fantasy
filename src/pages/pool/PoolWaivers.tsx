@@ -19,6 +19,11 @@ interface FreeAgent {
   name: string
   worldRanking: number | null
   teeTime: string | null
+  // Points this golfer has already banked in THIS pool's completed
+  // events — the number that actually decides an add.
+  points: number
+  eventsPlayed: number
+  totalPriorEvents: number
 }
 
 export function PoolWaivers() {
@@ -195,9 +200,13 @@ export function PoolWaivers() {
             ))}
           </div>
 
-          <h2 className="font-display text-lg mb-2" style={{ color: 'var(--color-text-primary)' }}>
+          <h2 className="font-display text-lg mb-1" style={{ color: 'var(--color-text-primary)' }}>
             2 · WHO JOINS
           </h2>
+          <p className="text-xs mb-2" style={{ color: 'var(--color-text-muted)' }}>
+            Points are what they've already scored in this pool's finished events, on this pool's
+            scoring. Everyone listed is in the upcoming field.
+          </p>
           {adds.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mb-2">
               {adds.map((id, i) => {
@@ -229,12 +238,26 @@ export function PoolWaivers() {
               <button
                 key={g.id}
                 onClick={() => setAdds(adds.includes(g.id) ? adds.filter((a) => a !== g.id) : [...adds, g.id])}
-                className="w-full flex items-center justify-between px-3 py-2 text-left"
+                className="w-full flex items-center justify-between gap-3 px-3 py-2 text-left"
                 style={{ borderColor: 'var(--color-border)' }}
               >
-                <span className="text-sm" style={{ color: 'var(--color-text-primary)' }}>{g.name}</span>
-                <span className="text-xs font-mono" style={{ color: adds.includes(g.id) ? 'var(--color-green-primary)' : 'var(--color-text-muted)' }}>
-                  {adds.includes(g.id) ? `#${adds.indexOf(g.id) + 1} choice` : `World #${g.worldRanking ?? '—'}`}
+                <span className="min-w-0">
+                  <span className="text-sm block truncate" style={{ color: 'var(--color-text-primary)' }}>
+                    {g.name}
+                  </span>
+                  <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
+                    World #{g.worldRanking ?? '—'} · played {g.eventsPlayed}/{g.totalPriorEvents}
+                    {g.eventsPlayed < g.totalPriorEvents && ' · missed an event'}
+                  </span>
+                </span>
+                <span className="text-right shrink-0">
+                  <span className="text-sm font-mono font-bold block"
+                    style={{ color: g.points > 0 ? 'var(--color-green-primary)' : 'var(--color-text-muted)' }}>
+                    {g.points.toFixed(0)}
+                  </span>
+                  <span className="text-[10px]" style={{ color: adds.includes(g.id) ? 'var(--color-green-primary)' : 'var(--color-text-muted)' }}>
+                    {adds.includes(g.id) ? `#${adds.indexOf(g.id) + 1} choice` : 'pts so far'}
+                  </span>
                 </span>
               </button>
             ))}

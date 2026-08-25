@@ -4,6 +4,8 @@ import { golfPools, golfPoolEntries, golfGolfers, golfGolferResults, users } fro
 import { eq, inArray } from 'drizzle-orm'
 import { poolTournamentRows } from '../../src/lib/db/poolTournaments.js'
 import { rostersForPool, rosterFor } from '../../src/lib/db/entryRosters.js'
+import { waiverSummary } from '../../src/lib/waivers/summary.js'
+import { verifyAuth } from '../_middleware.js'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
@@ -95,7 +97,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     })
 
+    // The dashboard sends people HERE once play starts, so this is the
+    // page an open waiver window has to announce itself on.
+    const viewerId = await verifyAuth(req)
+    const waiverWindow = tournamentIds.length > 1 ? await waiverSummary(db, pool, viewerId) : null
+
     return res.status(200).json({
+      waiverWindow,
       leaderboard,
       pool,
       tournaments: slate.map((t) => ({

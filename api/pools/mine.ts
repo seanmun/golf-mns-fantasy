@@ -8,6 +8,7 @@ import {
   golfPoolTournaments,
 } from '../../src/lib/db/schema.js'
 import { eq, inArray } from 'drizzle-orm'
+import { waiverWindowFor } from '../../src/lib/waivers/engine.js'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
@@ -72,6 +73,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       rank: e.rank,
       picksCount: (e.golferIds as string[]).length,
     }))
+
+    // Flag an open waiver window on the card itself. The dashboard is
+    // where people land, so a deadline they have to go looking for is a
+    // deadline they will miss — which is exactly what happened.
+    const multiPoolIds = pools.filter((p) => p.eventCount > 1).map((p) => p.id)
+    const waiverOpen = new Set<string>()
+    if (multiPoolIds.length > 0) {
+      const rows = await db
+        .select()
+        .from(golfPools)
+        .where(inArray(golfPools.id, multiPoolIds))
+      for (const row of rows) {
+        try {
+          const win = await waiverWindowFor(db, row)
+          if (win.isOpen) waiverOpen.add(row.id)
+        } catch {
+          /* a window we can't compute must not break the dashboard */
+        }
+      }
+    }
+    for (const p of pools) {
+      ;(p as Record<string, unknown>).waiverOpen = waiverOpen.has(p.id)
+    }
 
     // Live/upcoming events first (soonest first), finished events after
     // (most recent first). A multi-week pool counts as finished only when
