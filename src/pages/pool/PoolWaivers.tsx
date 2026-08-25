@@ -19,8 +19,12 @@ interface FreeAgent {
   name: string
   worldRanking: number | null
   teeTime: string | null
-  // Points this golfer has already banked in THIS pool's completed
-  // events — the number that actually decides an add.
+  // Real finishes in this pool's completed events. NOT fantasy points:
+  // hole-by-hole stats are only fetched for rostered golfers, so a free
+  // agent's points would always compute to ~0.
+  finishes: Array<{ event: string; position: number | null; totalScore: number | null }>
+  avgFinish: number | null
+  // Fantasy points already scored in this pool's finished events.
   points: number
   eventsPlayed: number
   totalPriorEvents: number
@@ -204,8 +208,8 @@ export function PoolWaivers() {
             2 · WHO JOINS
           </h2>
           <p className="text-xs mb-2" style={{ color: 'var(--color-text-muted)' }}>
-            Points are what they've already scored in this pool's finished events, on this pool's
-            scoring. Everyone listed is in the upcoming field.
+            Points are what they'd have scored for you in this pool's finished events, on this
+            pool's scoring. Everyone listed is in the upcoming field.
           </p>
           {adds.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mb-2">
@@ -246,13 +250,17 @@ export function PoolWaivers() {
                     {g.name}
                   </span>
                   <span className="text-[11px]" style={{ color: 'var(--color-text-muted)' }}>
-                    World #{g.worldRanking ?? '—'} · played {g.eventsPlayed}/{g.totalPriorEvents}
-                    {g.eventsPlayed < g.totalPriorEvents && ' · missed an event'}
+                    {g.finishes.length > 0
+                      ? g.finishes
+                          .map((f) => `${shortEvent(f.event)} ${f.position ? `T${f.position}` : '—'}`)
+                          .join(' · ')
+                      : 'no prior events'}
+                    {' · World #'}{g.worldRanking ?? '—'}
                   </span>
                 </span>
                 <span className="text-right shrink-0">
                   <span className="text-sm font-mono font-bold block"
-                    style={{ color: g.points > 0 ? 'var(--color-green-primary)' : 'var(--color-text-muted)' }}>
+                    style={{ color: adds.includes(g.id) ? 'var(--color-green-primary)' : 'var(--color-text-primary)' }}>
                     {g.points.toFixed(0)}
                   </span>
                   <span className="text-[10px]" style={{ color: adds.includes(g.id) ? 'var(--color-green-primary)' : 'var(--color-text-muted)' }}>
@@ -284,6 +292,16 @@ export function PoolWaivers() {
       )}
     </div>
   )
+}
+
+// "FedEx St. Jude Championship" -> "St. Jude"; the list is cramped and
+// the full names are all near-identical.
+function shortEvent(name: string): string {
+  return name
+    .replace(/^FedEx\s+/i, '')
+    .replace(/\s*Championship$/i, '')
+    .replace(/^TOUR$/i, 'TOUR Champ')
+    .trim()
 }
 
 function ordinal(n: number): string {

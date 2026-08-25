@@ -10,6 +10,7 @@ import {
 import { poolIdsForTournament, poolTournamentRows } from '../db/poolTournaments.js'
 import { rostersForPool } from '../db/entryRosters.js'
 import { recalculatePool } from './recalculatePool.js'
+import { settleScorecards } from './settleScorecards.js'
 import { recomputeSeasonStats } from './seasonStats.js'
 import { controlDraft } from '../../../api/_draftService.js'
 import {
@@ -33,6 +34,9 @@ export interface SyncResult {
   fieldAdded?: number
   unmatchedPlayers?: number
   scorecardCalls?: number
+  // Post-event backfill of hole data for non-rostered golfers.
+  settledScorecards?: number
+  scorecardsStillMissing?: number
   pools?: number
   entriesRecalculated?: number
 }
@@ -257,6 +261,16 @@ export async function syncTournament(
     })
     .where(eq(golfTournaments.id, tournament.id))
 
+  // Once the event is final, fill in scorecards for everyone who never
+  // got one — only rostered golfers are fetched during play, so the rest
+  // of the field has no hole data and therefore no real fantasy points.
+  // Capped, and run BEFORE the pool recalc so anything filled this pass
+  // is reflected immediately.
+  let settled = { attempted: 0, filled: 0, remaining: 0 }
+  if (newStatus === 'completed') {
+    settled = await settleScorecards(db, tournament)
+  }
+
   let entriesRecalculated = 0
   for (const pool of pools) {
     // Read the pool's whole slate — this event's new status is already
@@ -309,6 +323,8 @@ export async function syncTournament(
     fieldAdded,
     unmatchedPlayers: unmatched,
     scorecardCalls,
+    settledScorecards: settled.filled,
+    scorecardsStillMissing: settled.remaining,
     pools: pools.length,
     entriesRecalculated,
   }

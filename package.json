@@ -11,7 +11,8 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:repair-scoring": "tsx scripts/repair-pool-scoring.ts",
     "db:seed": "npx tsx src/lib/db/seed.ts",
-    "waivers": "tsx scripts/waivers.ts"
+    "waivers": "tsx scripts/waivers.ts",
+    "settle": "tsx scripts/settle.ts"
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.61.4",

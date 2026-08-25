@@ -135,51 +135,92 @@ export async function freeAgentsFor(db: Db, pool: Pool, tournamentId: string) {
       )
     )
 
-  // Score them on the pool's OWN config, so the number shown is the
-  // number they would have contributed to this team.
+  // What a free agent has actually DONE in this pool's finished events.
+  //
+  // Deliberately finishes and score-to-par, not fantasy points: the
+  // hole-by-hole stats those are built from are only fetched for
+  // ROSTERED golfers (see pickedGolferIds in syncTournament — one API
+  // call per golfer per event, so the whole field is out of budget).
+  // A free agent's birdie/eagle counts are therefore all zero, and any
+  // "points" figure would read ~0 for precisely the players this list
+  // exists to compare. Position and total score come off the
+  // leaderboard for everyone, so they are real.
   const events = await poolTournamentRows(db, pool)
   const played = events.filter((t) => t.status === 'completed')
   const config = pool.scoringConfig as ScoringConfig
+  const finishes = new Map<string, Array<{ event: string; position: number | null; totalScore: number | null }>>()
+  // Real fantasy points, on THIS pool's scoring — only meaningful
+  // because the settle pass backfills hole data for the whole field
+  // once an event is final. Before that these were all ~0.
   const points = new Map<string, number>()
-  const eventsPlayed = new Map<string, number>()
 
   if (played.length > 0) {
     const results = await db
       .select()
       .from(golfGolferResults)
       .where(inArray(golfGolferResults.tournamentId, played.map((t) => t.id)))
-    const stateBy = new Map(
-      played.map((t) => [t.id, { cutApplied: t.cutApplied, eventFinal: true }])
-    )
-    // Dedupe per event first — golfer_results has no unique constraint
-    // on (tournament_id, golfer_id), so a stray row would double-count.
+    const nameBy = new Map(played.map((t) => [t.id, t.name]))
+    // Keyed by NAME because that is what the finish rows carry — keying
+    // by id here looked right and silently sorted nothing.
+    const order = new Map(played.map((t, i) => [t.name, i]))
     const seen = new Set<string>()
     for (const r of results) {
       const key = `${r.tournamentId}:${r.golferId}`
       if (seen.has(key)) continue
       seen.add(key)
-      const state = stateBy.get(r.tournamentId)
-      if (!state) continue
-      points.set(
-        r.golferId,
-        Math.round(((points.get(r.golferId) ?? 0) + calculateGolferPoints(statsFromResult(r, state), config)) * 100) / 100
-      )
-      eventsPlayed.set(r.golferId, (eventsPlayed.get(r.golferId) ?? 0) + 1)
+      const list = finishes.get(r.golferId) ?? []
+      list.push({
+        event: nameBy.get(r.tournamentId) ?? '',
+        position: r.position,
+        totalScore: r.totalScore,
+      })
+      finishes.set(r.golferId, list)
+      const t = played.find((x) => x.id === r.tournamentId)
+      if (t) {
+        points.set(
+          r.golferId,
+          Math.round(
+            ((points.get(r.golferId) ?? 0) +
+              calculateGolferPoints(
+                statsFromResult(r, { cutApplied: t.cutApplied, eventFinal: true }),
+                config
+              )) * 100
+          ) / 100
+        )
+      }
+    }
+    for (const list of finishes.values()) {
+      list.sort((a, b) => (order.get(a.event) ?? 0) - (order.get(b.event) ?? 0))
     }
   }
 
   const taken = await rosteredGolferIds(db, pool.id, tournamentId)
   return field
     .filter((g) => !taken.has(g.id))
-    .map((g) => ({
-      ...g,
-      points: points.get(g.id) ?? 0,
-      eventsPlayed: eventsPlayed.get(g.id) ?? 0,
-      totalPriorEvents: played.length,
-    }))
-    // Best available by what they have actually produced here.
+    .map((g) => {
+      const list = finishes.get(g.id) ?? []
+      // Average finish across the events they played — one number to
+      // sort on that survives a missed event.
+      const placed = list.filter((f) => f.position != null)
+      const avgFinish = placed.length
+        ? placed.reduce((s, f) => s + (f.position as number), 0) / placed.length
+        : null
+      return {
+        ...g,
+        finishes: list,
+        avgFinish,
+        points: points.get(g.id) ?? 0,
+        eventsPlayed: list.length,
+        totalPriorEvents: played.length,
+      }
+    })
+    // Best available by points actually produced in this pool; finish
+    // and world ranking only break ties.
     .sort((a, b) => {
       if (b.points !== a.points) return b.points - a.points
+      const fa = a.avgFinish ?? Number.MAX_SAFE_INTEGER
+      const fb = b.avgFinish ?? Number.MAX_SAFE_INTEGER
+      if (fa !== fb) return fa - fb
       const ra = a.worldRanking ?? Number.MAX_SAFE_INTEGER
       const rb = b.worldRanking ?? Number.MAX_SAFE_INTEGER
       return ra !== rb ? ra - rb : a.name.localeCompare(b.name)
