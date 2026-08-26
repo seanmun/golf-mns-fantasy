@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronLeft, X } from 'lucide-react'
+import { ChevronLeft, X, ChevronUp, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { useApi } from '@/lib/api/client'
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner'
@@ -47,7 +47,7 @@ export function PoolWaivers() {
   if (isLoading) return <LoadingSpinner />
   if (!data) return null
 
-  const { window: win, priority = [], myRoster = [], freeAgents = [], myClaim } = data
+  const { window: win, priority = [], myRoster = [], freeAgents = [], myClaim, history = [] } = data
   const myPosition = priority.find((p: any) => p.isMe)?.position
 
   const filtered = (freeAgents as FreeAgent[]).filter((g) =>
@@ -212,19 +212,52 @@ export function PoolWaivers() {
             pool's scoring. Everyone listed is in the upcoming field.
           </p>
           {adds.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mb-2">
+            <div className="rounded-lg border mb-3 divide-y"
+              style={{ borderColor: 'var(--color-green-muted)', background: 'var(--color-surface)' }}>
+              <div className="px-3 py-2 text-xs font-semibold uppercase tracking-wide"
+                style={{ color: 'var(--color-green-primary)' }}>
+                Your queue — first one still available wins
+              </div>
               {adds.map((id, i) => {
                 const g = (freeAgents as FreeAgent[]).find((f) => f.id === id)
                 return (
-                  <span key={id}
-                    className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs"
-                    style={{ background: 'var(--color-green-dim)', color: 'var(--color-green-primary)', border: '1px solid var(--color-green-muted)' }}>
-                    <span className="font-mono">{i + 1}</span>
-                    {g?.name ?? id}
-                    <button onClick={() => setAdds(adds.filter((a) => a !== id))}>
-                      <X size={11} />
+                  <div key={id} className="flex items-center gap-2 px-3 py-2"
+                    style={{ borderColor: 'var(--color-border)' }}>
+                    <span className="font-mono text-xs w-4 shrink-0" style={{ color: 'var(--color-text-muted)' }}>
+                      {i + 1}
+                    </span>
+                    <span className="text-sm flex-1 truncate" style={{ color: 'var(--color-text-primary)' }}>
+                      {g?.name ?? id}
+                    </span>
+                    <span className="text-xs font-mono shrink-0" style={{ color: 'var(--color-text-muted)' }}>
+                      {g ? `${g.points.toFixed(0)} pts` : ''}
+                    </span>
+                    {/* Up/down rather than drag: this gets used on a
+                        phone, where dragging a list item is fiddly and
+                        fights the page scroll. */}
+                    <button
+                      type="button"
+                      disabled={i === 0}
+                      onClick={() => setAdds(swap(adds, i, i - 1))}
+                      className="disabled:opacity-25 shrink-0"
+                      aria-label="Move up"
+                    >
+                      <ChevronUp size={14} style={{ color: 'var(--color-text-secondary)' }} />
                     </button>
-                  </span>
+                    <button
+                      type="button"
+                      disabled={i === adds.length - 1}
+                      onClick={() => setAdds(swap(adds, i, i + 1))}
+                      className="disabled:opacity-25 shrink-0"
+                      aria-label="Move down"
+                    >
+                      <ChevronDown size={14} style={{ color: 'var(--color-text-secondary)' }} />
+                    </button>
+                    <button type="button" onClick={() => setAdds(adds.filter((a) => a !== id))}
+                      className="shrink-0" aria-label="Remove">
+                      <X size={13} style={{ color: 'var(--color-text-muted)' }} />
+                    </button>
+                  </div>
                 )
               })}
             </div>
@@ -286,9 +319,57 @@ export function PoolWaivers() {
               ? 'Pick who drops'
               : adds.length === 0
                 ? 'Pick who joins'
-                : `Submit claim — ${adds.length} choice${adds.length > 1 ? 's' : ''}`}
+                : `Submit claim — ${adds.length} in your queue`}
           </button>
         </>
+      )}
+
+      {/* Once the window shuts this page has nothing else to say, so the
+          transaction log lives here rather than on a route of its own. */}
+      {history.length > 0 && (
+        <div className="mt-10">
+          <h2 className="font-display text-lg mb-1" style={{ color: 'var(--color-text-primary)' }}>
+            TRANSACTIONS
+          </h2>
+          <p className="text-xs mb-3" style={{ color: 'var(--color-text-muted)' }}>
+            Every claim that has been processed, newest first.
+          </p>
+          <div className="rounded-lg border divide-y"
+            style={{ borderColor: 'var(--color-border)', background: 'var(--color-surface)' }}>
+            {history.map((h: any) => (
+              <div key={h.id} className="px-4 py-3" style={{ borderColor: 'var(--color-border)' }}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm" style={{ color: 'var(--color-text-primary)' }}>
+                      <span className="font-medium">{h.team}</span>
+                      {h.status === 'granted' ? (
+                        <>
+                          {' '}
+                          <span style={{ color: 'var(--color-green-primary)' }}>+{h.added}</span>
+                          {' \u00b7 '}
+                          <span style={{ color: 'var(--color-score-bogey)' }}>-{h.dropped}</span>
+                        </>
+                      ) : (
+                        <span style={{ color: 'var(--color-text-muted)' }}> - claim failed</span>
+                      )}
+                    </div>
+                    <div className="text-[11px] mt-0.5" style={{ color: 'var(--color-text-muted)' }}>
+                      before {shortEvent(h.event)}
+                      {h.status === 'failed' && h.failureReason && ` \u00b7 ${h.failureReason}`}
+                    </div>
+                  </div>
+                  {h.processedAt && (
+                    <div className="text-[11px] shrink-0" style={{ color: 'var(--color-text-muted)' }}>
+                      {new Date(h.processedAt).toLocaleDateString('en-US', {
+                        month: 'short', day: 'numeric',
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   )
@@ -296,6 +377,12 @@ export function PoolWaivers() {
 
 // "FedEx St. Jude Championship" -> "St. Jude"; the list is cramped and
 // the full names are all near-identical.
+function swap<T>(list: T[], a: number, b: number): T[] {
+  const next = [...list]
+  ;[next[a], next[b]] = [next[b], next[a]]
+  return next
+}
+
 function shortEvent(name: string): string {
   return name
     .replace(/^FedEx\s+/i, '')

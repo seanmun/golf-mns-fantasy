@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { and, desc, asc, eq, inArray } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/pg-core'
 import { db } from '../_db.js'
 import { verifyAuth } from '../_middleware.js'
 import { ensureUser } from '../_ensureUser.js'
@@ -7,6 +8,7 @@ import {
   golfPools,
   golfPoolEntries,
   golfGolfers,
+  golfTournaments,
   golfTournamentField,
   golfWaiverClaims,
   users,
@@ -108,20 +110,35 @@ async function getState(req: VercelRequest, res: VercelResponse, pool: Pool) {
     freeAgents = await freeAgentsFor(db, pool, window.tournament.id)
   }
 
-  // Everything already settled, for the transaction log.
+  // Everything already settled, with names resolved — the raw ids this
+  // used to return were useless to render.
+  const addedG = alias(golfGolfers, 'added_golfer')
+  const droppedG = alias(golfGolfers, 'dropped_golfer')
   const history = await db
     .select({
       id: golfWaiverClaims.id,
       status: golfWaiverClaims.status,
-      tournamentId: golfWaiverClaims.tournamentId,
-      grantedGolferId: golfWaiverClaims.grantedGolferId,
-      dropGolferId: golfWaiverClaims.dropGolferId,
-      failureReason: golfWaiverClaims.failureReason,
       processedAt: golfWaiverClaims.processedAt,
-      entryId: golfWaiverClaims.entryId,
+      failureReason: golfWaiverClaims.failureReason,
+      event: golfTournaments.name,
+      eventStart: golfTournaments.startDate,
+      team: users.displayName,
+      userId: golfPoolEntries.userId,
+      added: addedG.name,
+      dropped: droppedG.name,
     })
     .from(golfWaiverClaims)
-    .where(and(eq(golfWaiverClaims.poolId, pool.id), inArray(golfWaiverClaims.status, ['granted', 'failed'])))
+    .innerJoin(golfPoolEntries, eq(golfWaiverClaims.entryId, golfPoolEntries.id))
+    .innerJoin(users, eq(golfPoolEntries.userId, users.id))
+    .innerJoin(golfTournaments, eq(golfWaiverClaims.tournamentId, golfTournaments.id))
+    .leftJoin(addedG, eq(golfWaiverClaims.grantedGolferId, addedG.id))
+    .leftJoin(droppedG, eq(golfWaiverClaims.dropGolferId, droppedG.id))
+    .where(
+      and(
+        eq(golfWaiverClaims.poolId, pool.id),
+        inArray(golfWaiverClaims.status, ['granted', 'failed'])
+      )
+    )
     .orderBy(desc(golfWaiverClaims.processedAt))
 
   return res.status(200).json({
