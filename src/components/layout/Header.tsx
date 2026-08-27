@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { SignedIn, SignedOut, UserButton, useAuth } from '@clerk/clerk-react'
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/Button'
+import { ThemeToggle } from '@/ui/components'
 
 function AdminNav() {
   const { getToken } = useAuth()
@@ -50,6 +51,7 @@ export function Header() {
         </nav>
 
         <div className="flex items-center gap-3">
+          <ThemeToggle />
           <SignedIn>
             <UserButton
               afterSignOutUrl="/"

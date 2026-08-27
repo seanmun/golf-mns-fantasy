@@ -1,4 +1,11 @@
 @import "tailwindcss";
+/* Runtime palette + component styles from mns-ui (synced src/ui/).
+   tokens.css carries BOTH themes — Chalk light on bare :root, dark via
+   prefers-color-scheme and [data-theme] stamps — and, being unlayered,
+   it overrides the @theme block's values at runtime. The @theme block
+   below still names the tokens so Tailwind utilities exist. */
+@import "./ui/tokens.css";
+@import "./ui/mns-ui.css";
 
 @theme {
   --color-background: #0a0a0f;
@@ -21,7 +28,8 @@
   --font-mono: 'JetBrains Mono', monospace;
 }
 
-/* Aliases so existing components don't need rewriting */
+/* Aliases so existing components don't need rewriting. They point at
+   the platform tokens, so both themes flow through them untouched. */
 :root {
   --color-bg: var(--color-background);
   --color-surface: var(--color-card);
@@ -29,13 +37,71 @@
   --color-text-primary: var(--color-foreground);
   --color-text-secondary: var(--color-muted-foreground);
   --color-text-muted: var(--color-muted-foreground);
-  --color-green-primary: var(--color-neon-green);
-  --color-green-muted: #2d5a3d;
-  --color-green-dim: #0d2a1a;
+  /* Accent, not raw neon: neon green is the DARK accent and fails
+     on Chalk light; --color-accent is the right green in both. */
+  --color-green-primary: var(--color-accent);
+  --color-green-dim: var(--color-accent-soft);
 }
 
-/* Golf-specific score colors */
+/* Golf-specific colors, light values first — every one measured on
+   background #f2f5f6 and card #ffffff, all ≥4.6:1. The originals come
+   back for dark under the same two guards tokens.css uses. The neon-*
+   names double as themed values so pages using text-neon-* stay
+   readable in light without a page-by-page sweep. */
 :root {
+  --color-green-muted: #3f7a55;
+  --color-score-eagle: #026b4d;
+  --color-score-birdie: #0a6a8a;
+  --color-score-par: #5f7172;
+  --color-score-bogey: #845600;
+  --color-score-double: #b62c1e;
+  --color-gold: #7a5c10;
+  --color-gold-light: #8a6a14;
+  --color-neon-green: #026b4d;
+  --color-neon-cyan: #0a6a8a;
+  --color-neon-pink: #b3134f;
+  --color-neon-purple: #7d3ca3;
+
+  /* Hole-by-hole score tiers (PoolLeaderboard scorecards): a DISTINCT
+     color per tier, best -> worst, on a different scale from the
+     score-* fantasy-points names above. Light values measured ≥5.5. */
+  --hole-ace: #7d3ca3;
+  --hole-albatross: #0a6a8a;
+  --hole-eagle: #1d4ed8;
+  --hole-birdie: #026b4d;
+  --hole-par: #5f7172;
+  --hole-bogey: #845600;
+  --hole-double: #8f4700;
+  --hole-worse: #b62c1e;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-green-muted: #2d5a3d;
+    --color-score-eagle: #00ff87;
+    --color-score-birdie: #00e5ff;
+    --color-score-par: #8e8e9a;
+    --color-score-bogey: #ff9f0a;
+    --color-score-double: #ff453a;
+    --color-gold: #c9a84c;
+    --color-gold-light: #e8c96a;
+    --color-neon-green: #00ff87;
+    --color-neon-cyan: #00e5ff;
+    --color-neon-pink: #ff2d55;
+    --color-neon-purple: #bf5af2;
+    --hole-ace: #bf5af2;
+    --hole-albatross: #00e5ff;
+    --hole-eagle: #3b82f6;
+    --hole-birdie: #00ff87;
+    --hole-par: #8e8e9a;
+    --hole-bogey: #ffd60a;
+    --hole-double: #ff9f0a;
+    --hole-worse: #ff453a;
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-green-muted: #2d5a3d;
   --color-score-eagle: #00ff87;
   --color-score-birdie: #00e5ff;
   --color-score-par: #8e8e9a;
@@ -43,6 +109,18 @@
   --color-score-double: #ff453a;
   --color-gold: #c9a84c;
   --color-gold-light: #e8c96a;
+  --color-neon-green: #00ff87;
+  --color-neon-cyan: #00e5ff;
+  --color-neon-pink: #ff2d55;
+  --color-neon-purple: #bf5af2;
+  --hole-ace: #bf5af2;
+  --hole-albatross: #00e5ff;
+  --hole-eagle: #3b82f6;
+  --hole-birdie: #00ff87;
+  --hole-par: #8e8e9a;
+  --hole-bogey: #ffd60a;
+  --hole-double: #ff9f0a;
+  --hole-worse: #ff453a;
 }
 
 body {

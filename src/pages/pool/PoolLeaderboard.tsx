@@ -187,15 +187,16 @@ type ScoreKind =
 
 // A distinct color per tier, running best -> worst:
 // purple, cyan, blue, green, grey, yellow, orange, red.
+// Values live in index.css as --hole-* so both themes stay measured.
 const SCORE_STYLE: Record<ScoreKind, { color: string; weight: number }> = {
-  ace: { color: '#bf5af2', weight: 700 },
-  albatross: { color: '#00e5ff', weight: 700 },
-  eagle: { color: '#3b82f6', weight: 700 },
-  birdie: { color: '#00ff87', weight: 700 },
-  par: { color: '#8e8e9a', weight: 400 },
-  bogey: { color: '#ffd60a', weight: 600 },
-  double: { color: '#ff9f0a', weight: 700 },
-  worse: { color: '#ff453a', weight: 700 },
+  ace: { color: 'var(--hole-ace)', weight: 700 },
+  albatross: { color: 'var(--hole-albatross)', weight: 700 },
+  eagle: { color: 'var(--hole-eagle)', weight: 700 },
+  birdie: { color: 'var(--hole-birdie)', weight: 700 },
+  par: { color: 'var(--hole-par)', weight: 400 },
+  bogey: { color: 'var(--hole-bogey)', weight: 600 },
+  double: { color: 'var(--hole-double)', weight: 700 },
+  worse: { color: 'var(--hole-worse)', weight: 700 },
 }
 
 function kindOf(score: number, par: number): ScoreKind {
