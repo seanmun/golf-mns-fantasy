@@ -82,7 +82,8 @@ textarea.mns-input { padding: 0.75rem 1rem; line-height: 1.5; min-height: 6rem; 
 .mns-tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; display: flex; background: var(--color-card); border-top: 2px solid var(--color-border-interactive); padding-bottom: env(safe-area-inset-bottom); }
 .mns-tab { flex: 1; min-height: 3.5rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.15rem; font-weight: 800; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-muted-foreground); text-decoration: none; border-top: 2px solid transparent; margin-top: -2px; }
 .mns-tab--active { color: var(--color-accent); border-top-color: var(--color-accent); }
-.mns-tab__icon { font-size: 1.1rem; line-height: 1; }
+.mns-tab__icon { display: inline-flex; align-items: center; justify-content: center; height: 1.4rem; line-height: 1; }
+.mns-tab__icon svg { width: 1.25rem; height: 1.25rem; }
 
 /* ── Stepper (half-point) ── */
 .mns-stepper { display: inline-flex; align-items: center; gap: 0.25rem; }
@@ -110,3 +111,41 @@ textarea.mns-input { padding: 0.75rem 1rem; line-height: 1.5; min-height: 6rem; 
 .mns-theme-toggle { display: inline-flex; align-items: center; justify-content: center; min-height: 3rem; min-width: 3rem; border-radius: 0.5rem; border: none; background: transparent; color: var(--color-muted-foreground); cursor: pointer; }
 .mns-theme-toggle:hover { color: var(--color-foreground); }
 .mns-theme-toggle:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 2px; }
+
+/* ── BottomTabBar center action (the Ask button) ── */
+.mns-tab-ask { flex: 0 0 auto; align-self: center; margin: -1.1rem 0.5rem 0; min-height: 3.5rem; min-width: 3.5rem; padding: 0 0.85rem; white-space: nowrap; border-radius: 999px; border: 2px solid var(--color-accent); background: var(--color-accent); color: var(--color-accent-foreground); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.05rem; font-weight: 800; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.08em; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,0.25); }
+.mns-tab-ask:focus-visible { outline: 3px solid var(--color-accent); outline-offset: 2px; }
+/* Four tabs (two each side of Ask): equal widths, labels in mixed case
+   with no tracking so "Standings" fits at 360px without shrinking, and
+   the Ask button a fixed circle. Measured 360/375/390px — no clipping;
+   only a sub-340px phone steps the label down. */
+.mns-tabbar--four .mns-tab { min-width: 0; text-transform: none; letter-spacing: 0; }
+.mns-tabbar--four .mns-tab-ask { width: 4.25rem; padding: 0; margin: -1.1rem 0.25rem 0; white-space: normal; line-height: 1.05; text-align: center; }
+@media (max-width: 340px) { .mns-tabbar--four .mns-tab { font-size: 0.68rem; } }
+
+/* ── Sheet (assistant layer) ── */
+.mns-sheet-backdrop { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,0.45); display: flex; align-items: flex-end; }
+.mns-sheet { width: 100%; max-height: 92vh; min-height: 78vh; display: flex; flex-direction: column; background: var(--color-background); border-top: 1px solid var(--color-border-interactive); border-radius: 1rem 1rem 0 0; padding-bottom: env(safe-area-inset-bottom); }
+.mns-sheet__grip { min-height: 2.25rem; width: 100%; display: flex; align-items: center; justify-content: center; background: transparent; border: none; cursor: pointer; }
+.mns-sheet__grip::before { content: ''; width: 3rem; height: 0.3rem; border-radius: 999px; background: var(--color-border-interactive); }
+
+/* ── AssistantChat ── */
+.mns-chat { flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 0 1rem 0.75rem; }
+.mns-chat__bar { display: flex; justify-content: flex-end; padding: 0.25rem 0 0.5rem; }
+.mns-chat__voice { display: inline-flex; align-items: center; gap: 0.4rem; min-height: 2.5rem; padding: 0 0.9rem; border-radius: 999px; border: 1px solid var(--color-border-interactive); background: transparent; color: var(--color-muted-foreground); font-size: 0.8rem; font-weight: 700; cursor: pointer; }
+.mns-chat__voice--on { border-color: var(--color-accent); color: var(--color-accent); }
+.mns-chat__scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0.85rem; padding: 0.25rem 0 1rem; }
+.mns-chat__bubble { max-width: 92%; border-radius: 1rem; padding: 0.75rem 1rem; white-space: pre-wrap; line-height: 1.6; font-size: 1rem; }
+.mns-chat__bubble--user { align-self: flex-end; background: var(--color-accent); color: var(--color-accent-foreground); }
+.mns-chat__bubble--assistant { align-self: flex-start; background: var(--color-card); border: 1px solid var(--color-border); color: var(--color-foreground); }
+.mns-chat__suggestion { text-align: left; border: 1px solid var(--color-border-interactive); background: var(--color-card); color: var(--color-foreground); border-radius: 0.75rem; padding: 0.7rem 1rem; min-height: 3rem; cursor: pointer; }
+.mns-chat__note { margin: 0; padding: 0.5rem 0.25rem 0; font-size: 0.9rem; font-weight: 600; color: var(--color-foreground); }
+.mns-chat__composer { padding-top: 0.5rem; }
+.mns-chat__box { display: flex; flex-direction: column; gap: 0.25rem; border: 1px solid var(--color-border-interactive); border-radius: 1.1rem; background: var(--color-card); padding: 0.6rem 0.6rem 0.5rem 1rem; }
+.mns-chat__box:focus-within { border-color: var(--color-accent); }
+.mns-chat__actions { display: flex; justify-content: flex-end; align-items: center; gap: 0.4rem; }
+.mns-chat__input { resize: none; min-height: 3.4rem; max-height: 160px; background: transparent; border: none; outline: none; color: var(--color-foreground); padding: 0.3rem 0; font-size: 1rem; line-height: 1.5; }
+.mns-chat__btn { min-height: 3rem; min-width: 3rem; border-radius: 999px; border: 1px solid var(--color-border-interactive); background: transparent; color: var(--color-muted-foreground); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.mns-chat__btn--primary { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-accent-foreground); }
+.mns-chat__btn--active { border-color: var(--color-accent); color: var(--color-accent); }
+.mns-chat__btn:disabled { opacity: 0.4; cursor: not-allowed; }
